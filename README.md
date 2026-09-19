@@ -1,7 +1,105 @@
 # arte-suave-mcp
 
-Private FastMCP server exposing my Arte Suave (Copenhagen) class data to an AI
-assistant: schedule, my bookings, attendance history, and (phase 2) book/cancel.
+A private [FastMCP](https://github.com/jlowin/fastmcp) server that lets an AI
+assistant (Claude, via a custom connector) read my Arte Suave (Copenhagen) class
+data — schedule, my bookings, attendance history — and book/cancel classes.
+
+Runs as a single AWS Lambda behind an API Gateway HTTP API. **$0/mo** at
+personal volume (see `docs/INFRA.md`). No browser at runtime: plain HTTP against
+the portal, including solving the site's proof-of-work shield in pure Python.
+
+## Tools
+
+| Tool | What it does |
+|---|---|
+| `get_schedule(discipline?, date_from?, date_to?)` | Classes with name, discipline group, trainer, start/end, location, spots. `discipline` matches loosely — "kickboxing", "muay thai", "K1" all resolve to thai boxing — and the gym's **original** class name is always returned. |
+| `get_my_bookings()` | Classes you're signed up for. |
+| `get_history(date_from?, date_to?)` | Attendance: this-month / 30-day / all-time counts, hours, latest training, per-discipline breakdown. |
+| `book_class(class_id)` / `cancel_booking(booking_id)` | Book / cancel (writes to your account). |
+| `health_check()` | Verifies login + each parser, per endpoint. |
+| `debug_fetch(target)` | Sanitized raw HTML for a target, so the assistant can adapt if the site changes. |
+
+Example asks: *"What thai boxing classes are on this week?"*, *"When is Michael
+teaching?"*, *"How many times have I trained this month?"*
+
+## Resilience by design
+
+- All endpoints, selectors, field names and discipline aliases live in one place
+  (`arte_suave_mcp/config.py`) — nothing hard-coded in tool logic.
+- Responses parse into pydantic models. On a parse failure the tool never raises
+  an opaque error or returns partial garbage: it returns
+  `{"status": "parse_failed", step, expected, raw_excerpt}` (size-capped,
+  sanitized) so the assistant can read the raw page, answer anyway, and tell you
+  what changed. `debug_fetch` exists for the same reason.
+- Session cookies are reused across invocations (in-memory + DynamoDB) and we
+  re-login transparently on expiry. Requests are rate-limited and the schedule
+  is cached — polite to the gym's server.
+- Contract tests run against redacted HTML fixtures; one opt-in live smoke test
+  hits the real portal.
 
 See `DISCOVERY.md` for how the portal works and `docs/INFRA.md` for the AWS
-design and cost analysis. README is fleshed out after deploy (connector setup).
+design and cost review.
+
+## Local development
+
+```bash
+uv sync
+uv run pytest                 # 13 contract/unit tests
+uv run ruff check .
+
+# run the server locally (open, no secret)
+LOGIN=... PASSWORD=... uv run arte-suave-mcp     # serves http://localhost:8080/mcp
+
+# live smoke test against the real portal (read-only)
+ARTESUAVE_LIVE_SMOKE=1 uv run pytest tests/test_live_smoke.py -v
+```
+
+Credentials come from `LOGIN`/`PASSWORD` (env or `.env`) locally, and from SSM
+SecureString in Lambda. `.env` is gitignored; never commit it.
+
+## Deploy
+
+Prereqs: AWS CLI + `uv`. No Docker, no SAM CLI needed (Linux wheels are fetched
+cross-platform by uv). Uses the `nettoday-admin` profile in eu-north-1 by
+default — override with `AWS_PROFILE` / `AWS_REGION`.
+
+```bash
+bash infra/put-secrets.sh     # stores login/password + a generated MCP secret in SSM
+                              # prints MCP_SECRET=... — save it for the connector
+bash infra/deploy.sh          # builds, uploads, deploys the CloudFormation stack
+                              # prints the MCP endpoint URL
+```
+
+Everything is namespaced `artesuave-mcp-*` and tagged `project=artesuave-mcp`,
+fully separate from any other project in the account.
+
+## Connect Claude (custom connector)
+
+1. Get the endpoint (ends in `/mcp`) from the deploy output, and the
+   `MCP_SECRET` from `put-secrets.sh`.
+2. In Claude → **Settings → Connectors → Add custom connector**:
+   - **URL**: the `/mcp` endpoint.
+   - **Authentication**: bearer token — value = your `MCP_SECRET`. (The server
+     also accepts the secret as a trailing path segment if your client can't set
+     a header.)
+3. Save and enable. Claude will list the seven tools above.
+
+The API is public at the AWS edge; the server enforces the bearer secret itself,
+so keep the secret private and rotate it with `put-secrets.sh` if leaked.
+
+## Layout
+
+```
+arte_suave_mcp/
+  config.py    endpoints, selectors, discipline aliases (edit here when the site changes)
+  models.py    pydantic models + ok/parse_failed/error envelope
+  waf.py       simply.com proof-of-work solver
+  client.py    httpx session client: WAF clearance, login, reuse, one-retry re-login
+  parsers.py   selectolax parsers (isolated)
+  service.py   tool logic (framework-agnostic)
+  server.py    FastMCP tools + ASGI app + bearer gate
+  creds.py / session_store.py   SSM/env creds; memory/file/DynamoDB session
+infra/         template.yaml (SAM/CFN), deploy.sh, put-secrets.sh, run.sh
+scripts/       Playwright discovery harness (dev only)
+tests/         contract tests + fixtures + opt-in live smoke
+```

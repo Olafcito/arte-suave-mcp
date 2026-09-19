@@ -37,7 +37,7 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["scripts"]
+extend-exclude = ["scripts", ".build", "discovery"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

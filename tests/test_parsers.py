@@ -65,6 +65,8 @@ def test_parse_attendance():
     assert s.total_hours == pytest.approx(190.5)
     assert s.by_discipline  # per-discipline breakdown present
     assert s.by_discipline.get("Thaiboksning fundamentals") == 74
+    assert s.latest_date == "19.09.2026"
+    assert s.latest_class == "Thaiboksning"
 
 
 def test_find_csrf_for():

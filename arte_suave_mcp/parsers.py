@@ -122,7 +122,9 @@ def parse_bookings(html: str) -> list[Booking]:
 
 def parse_attendance(html: str) -> AttendanceSummary:
     tree = HTMLParser(html)
-    flat = re.sub(r"\s+", " ", (tree.body.text() if tree.body else html))
+    # tree.text() strips tags for both full documents and fragments (body-less),
+    # so "Seneste træning: <strong>19.09.2026</strong> – Thai" flattens cleanly.
+    flat = re.sub(r"\s+", " ", tree.text())
 
     def num_before(label: str) -> int | None:
         m = re.search(r"(\d+)\s*" + re.escape(label), flat)
@@ -137,7 +139,9 @@ def parse_attendance(html: str) -> AttendanceSummary:
     m_30 = re.search(r"Seneste 30 dage\s*(\d+)", flat)
     m_total = re.search(r"I alt\s*(\d+)\s*træninger", flat)
     m_hours = re.search(r"Timer\s*([\d.,]+)", flat)
-    m_latest = re.search(r"Seneste træning:\s*([\d.]+)\s*[–\-—]\s*([^.]+?)(?:Se|$)", flat)
+    m_latest = re.search(
+        r"Seneste træning:\s*([\d.]{6,})\s*[^\w]{1,3}\s*([^<.]+?)(?:\s*Se |$)", flat
+    )
     if m_month:
         summary.this_month = int(m_month.group(1))
     if m_30:

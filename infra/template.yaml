@@ -1,0 +1,150 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  arte-suave-mcp — private FastMCP server (single Lambda behind a Function URL,
+  streamable HTTP via the Lambda Web Adapter). Fully separate from any other
+  project. Every resource is prefixed artesuave-mcp- and tagged project=artesuave-mcp.
+
+Parameters:
+  LwaLayerArn:
+    Type: String
+    Default: arn:aws:lambda:eu-north-1:753240598075:layer:LambdaAdapterLayerX86:30
+    Description: Lambda Web Adapter layer (x86_64) for this region.
+  CodeS3Bucket:
+    Type: String
+    Description: S3 bucket holding the packaged function zip.
+  CodeS3Key:
+    Type: String
+    Description: S3 key of the packaged function zip.
+
+Resources:
+  SessionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: artesuave-mcp-sessions
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      Tags:
+        - Key: project
+          Value: artesuave-mcp
+
+  FunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: artesuave-mcp-lambda-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: artesuave-mcp-least-privilege
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # only this project's session item
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:DeleteItem]
+                Resource: !GetAtt SessionTable.Arn
+              # only this project's SSM params (SecureString)
+              - Effect: Allow
+                Action: [ssm:GetParameter]
+                Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/artesuave-mcp/*
+              # decrypt SecureString with the account default SSM key
+              - Effect: Allow
+                Action: [kms:Decrypt]
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub ssm.${AWS::Region}.amazonaws.com
+      Tags:
+        - Key: project
+          Value: artesuave-mcp
+
+  Function:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: artesuave-mcp
+      Runtime: python3.12
+      Architectures: [x86_64]
+      Handler: run.sh
+      MemorySize: 512
+      Timeout: 30
+      Role: !GetAtt FunctionRole.Arn
+      Layers: [!Ref LwaLayerArn]
+      Code:
+        S3Bucket: !Ref CodeS3Bucket
+        S3Key: !Ref CodeS3Key
+      Environment:
+        Variables:
+          AWS_LAMBDA_EXEC_WRAPPER: /opt/bootstrap
+          AWS_LWA_PORT: "8080"
+          PORT: "8080"
+          ARTESUAVE_SESSION_TABLE: !Ref SessionTable
+          ARTESUAVE_LOGIN_PARAM: /artesuave-mcp/login
+          ARTESUAVE_PASSWORD_PARAM: /artesuave-mcp/password
+          ARTESUAVE_MCP_SECRET_PARAM: /artesuave-mcp/mcp-secret
+      Tags:
+        - Key: project
+          Value: artesuave-mcp
+
+  # Public entry point. This account's org blocks public Lambda Function URLs
+  # (AuthType NONE returns 403 at the AWS layer), so we front the function with
+  # an API Gateway HTTP API instead. The Lambda Web Adapter understands the
+  # API Gateway v2 payload unchanged. The app enforces its own bearer/path
+  # secret, so the API stays open at the AWS layer.
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: artesuave-mcp-api
+      ProtocolType: HTTP
+      Tags: { project: artesuave-mcp }
+
+  Integration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt Function.Arn
+      PayloadFormatVersion: "2.0"
+      TimeoutInMillis: 30000
+
+  RouteDefault:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "$default"
+      Target: !Sub integrations/${Integration}
+
+  Stage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: "$default"
+      AutoDeploy: true
+      Tags: { project: artesuave-mcp }
+
+  ApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Function
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*
+
+Outputs:
+  ApiEndpoint:
+    Description: Public base URL (append /mcp for the MCP endpoint).
+    Value: !GetAtt HttpApi.ApiEndpoint
+  McpEndpoint:
+    Value: !Sub ${HttpApi.ApiEndpoint}/mcp
+  TableName:
+    Value: !Ref SessionTable
