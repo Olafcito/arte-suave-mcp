@@ -41,6 +41,21 @@ def test_schedule_ids_and_bookable_flags():
     assert any(c.bookable for c in classes)
 
 
+def test_unregister_form_means_signed_up():
+    # A row you're already booked on carries an unregister form instead of a
+    # signup form: it must come back signed_up=True (and not bookable).
+    html = _read("schedule_day.html").replace(
+        'name="ClassSignupAction" value="signup"',
+        'name="ClassSignupAction" value="unregister"',
+        1,
+    )
+    classes = parse_schedule(html, date="2026-09-20")
+    flagged = [c for c in classes if c.signed_up]
+    assert len(flagged) == 1
+    assert flagged[0].bookable is False
+    assert all(c.signed_up is False for c in classes if c is not flagged[0])
+
+
 def test_discipline_group_tagging():
     classes = parse_schedule(_read("schedule_day.html"), date="2026-09-20")
     names = {c.name: c.discipline_group for c in classes}

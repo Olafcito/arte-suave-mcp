@@ -119,6 +119,42 @@ def _public_days(days: list[str]) -> dict[str, list]:
     return {d: result.get(d, []) for d in days}
 
 
+# Fields that are server plumbing, not schedule information. Planned rows (the
+# public weekly plan) additionally lose every booking-ish field: booking for
+# those days simply hasn't opened, which the response says once at the top
+# instead of as noisy per-row false/null values.
+_INTERNAL_FIELDS = ("source", "booking_open")
+_PLANNED_HIDDEN = _INTERNAL_FIELDS + (
+    "class_id", "bookable", "signed_up", "spots_available", "capacity",
+)
+
+
+def _present_class(c: dict) -> dict:
+    """Shape one class row for output: keep only fields that carry meaning."""
+    hidden = _PLANNED_HIDDEN if c.get("source") != "portal" else _INTERNAL_FIELDS
+    out = {k: v for k, v in c.items() if k not in hidden and v is not None}
+    if c.get("source") == "portal" and not c.get("booking_open", True):
+        out["booking_open"] = False  # closed signup is worth surfacing
+    return out
+
+
+def _schedule_notes(plan_days: list[str]) -> str | None:
+    """Plain-language provenance for days the portal doesn't serve live."""
+    today = _today().isoformat()
+    notes = []
+    if any(d < today for d in plan_days):
+        notes.append("Past days shown are from the gym's public weekly plan.")
+    future = sorted(d for d in plan_days if d > today)
+    if future:
+        release = _monday_of(dt.date.fromisoformat(future[0])) - dt.timedelta(days=1)
+        notes.append(
+            f"Classes from {future[0]} onward have not been released for booking "
+            f"yet; the next batch is expected to open Sunday "
+            f"{release.strftime('%d-%m-%Y')}."
+        )
+    return " ".join(notes) or None
+
+
 # -- tools --------------------------------------------------------------------
 def get_schedule(
     discipline: str | None = None,
@@ -151,7 +187,18 @@ def get_schedule(
             return parse_failed(e.step, e.expected, html, detail=e.detail)
         classes.extend(c.model_dump() for c in rows)
 
-    planned = 0
+    if classes:
+        # Cross-check bookings so each live row says signed_up directly and the
+        # caller never has to reconcile against get_my_bookings. Best-effort:
+        # the parser-derived flag stands if the bookings fetch fails.
+        try:
+            booked = _booked_ids()
+        except (AuthError, WAFError, ParseError):
+            booked = None
+        if booked is not None:
+            for c in classes:
+                c["signed_up"] = c["class_id"] in booked
+
     if plan_days:
         try:
             week = _public_days(plan_days)
@@ -161,21 +208,16 @@ def get_schedule(
             return parse_failed(e.step, e.expected, "", detail=e.detail)
         for day in plan_days:
             classes.extend(week[day])
-            planned += len(week[day])
 
     if group:
         classes = [c for c in classes if config.class_matches_discipline(c["name"], group)]
     classes.sort(key=lambda c: (c.get("date") or "", c.get("start") or ""))
 
     extra: dict = {"matched_discipline": group, "days": days, "filtered": bool(group)}
-    if planned:
-        extra["note"] = (
-            "Some classes have source='schedule': they come from Arte Suave's "
-            "public weekly plan (past days and future weeks). They may change and "
-            "have no live spots or booking. Live spots/booking exist only on "
-            "source='portal' (this week's upcoming classes)."
-        )
-    return ok(classes, **extra)
+    note = _schedule_notes(plan_days)
+    if note:
+        extra["note"] = note
+    return ok([_present_class(c) for c in classes], **extra)
 
 
 def get_my_bookings() -> dict:
@@ -188,7 +230,12 @@ def get_my_bookings() -> dict:
         bookings = parse_bookings(html, today=_today())
     except ParseError as e:
         return parse_failed(e.step, e.expected, html, detail=e.detail)
-    return ok([b.model_dump() for b in bookings])
+    hidden = _INTERNAL_FIELDS + ("bookable",)  # 'bookable' is noise on a booking
+    rows = [
+        {k: v for k, v in b.model_dump().items() if k not in hidden and v is not None}
+        for b in bookings
+    ]
+    return ok(rows)
 
 
 def get_history(date_from: str | None = None, date_to: str | None = None) -> dict:

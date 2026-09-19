@@ -49,6 +49,9 @@ class ClassInfo(BaseModel):
     spots_available: int | None = None
     capacity: int | None = None
     bookable: bool = Field(default=False, description="a signup form was present")
+    signed_up: bool = Field(
+        default=False, description="the user is already booked on this class"
+    )
     booking_open: bool = True
     source: str = Field(
         default="portal",
