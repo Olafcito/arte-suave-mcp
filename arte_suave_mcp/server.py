@@ -26,8 +26,10 @@ def get_schedule(
 ) -> dict:
     """Get Arte Suave classes. `discipline` matches loosely (e.g. "kickboxing",
     "muay thai", "K1" all resolve to thai boxing) and the gym's original class
-    name is always returned. Dates are YYYY-MM-DD; omit for today. Returns each
-    class with name, discipline_group, trainer, start/end, location, spots."""
+    name is always returned. Dates are YYYY-MM-DD; omit for today. Released
+    (this-week) classes carry class_id, spots, `bookable` and `signed_up`
+    (already booked); days beyond that aren't open for booking yet and the
+    response's `note` says so, including when the next batch opens."""
     return service.get_schedule(discipline, date_from, date_to)
 
 

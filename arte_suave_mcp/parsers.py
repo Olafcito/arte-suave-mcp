@@ -93,6 +93,8 @@ def _parse_row(node, date: str | None) -> ClassInfo:
         spots_available=avail,
         capacity=cap,
         bookable=bool(fields.get(F["signup_action"]) == F["book_value"]),
+        # an already-booked class renders an unregister form instead of a signup form
+        signed_up=bool(fields.get(F["signup_action"]) == F["cancel_value"]),
         booking_open=booking_open,
     )
 
