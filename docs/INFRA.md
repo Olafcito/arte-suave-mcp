@@ -122,10 +122,15 @@ Suave credentials, verifies them against the portal, and stores them.
 OIDC** — no AWS keys are stored in GitHub. The workflow assumes a dedicated
 least-privilege role, `artesuave-mcp-deploy`:
 
-- **Trust** — only `token.actions.githubusercontent.com` for
-  `repo:Olafcito/arte-suave-mcp:ref:refs/heads/main` (aud `sts.amazonaws.com`).
-  No human/user principal can assume it. Reuses the account's existing OIDC
-  provider (shared with other projects — there can only be one per issuer URL).
+- **Trust** — only `token.actions.githubusercontent.com` (aud `sts.amazonaws.com`),
+  restricted to this repo's `main` branch. This account has GitHub's **immutable
+  OIDC subject** enabled, so the required `sub` embeds the numeric owner/repo IDs:
+  `repo:Olafcito@122600472/arte-suave-mcp@1377333531:ref:refs/heads/main` (NOT the
+  classic `repo:Olafcito/arte-suave-mcp:...` — an early attempt with that form got
+  `Not authorized to perform sts:AssumeRoleWithWebIdentity` on every run). The IDs
+  are immutable, so this survives repo renames. No human/user principal can assume
+  it. Reuses the account's existing OIDC provider (shared with other projects —
+  there can only be one per issuer URL).
 - **Permissions** — scoped to this project's resources only: the `artesuave-mcp`
   CloudFormation stack (+ the SAM transform macro), the deploy S3 bucket, the
   `artesuave-mcp*` Lambda + the external LWA layer, `iam:PassRole`/manage limited
