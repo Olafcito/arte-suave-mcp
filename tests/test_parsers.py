@@ -8,6 +8,7 @@ from arte_suave_mcp.parsers import (
     find_csrf_for,
     parse_attendance,
     parse_bookings,
+    parse_public_week,
     parse_schedule,
 )
 
@@ -87,6 +88,41 @@ def test_empty_day_is_not_a_parse_failure():
 def test_structural_break_raises():
     with pytest.raises(ParseError):
         parse_schedule("<html><body>totally different page</body></html>")
+
+
+def test_parse_public_week_groups_by_day():
+    week = parse_public_week(_read("public_week.html"))
+    assert set(week) == {"2026-09-21", "2026-09-22"}
+    assert len(week["2026-09-21"]) == 3  # 2 mats: Mat1 (2) + Rig (1)
+    assert len(week["2026-09-22"]) == 1
+
+
+def test_parse_public_week_class_fields():
+    week = parse_public_week(_read("public_week.html"))
+    bjj = week["2026-09-21"][0]
+    assert bjj.name == "Elite BJJ"
+    assert bjj.start == "2026-09-21 08:00"
+    assert bjj.end == "2026-09-21 09:00"
+    assert bjj.trainer == "Shimon Mochizuki"
+    assert bjj.location == "Mat 1 Kampsport"
+    assert bjj.discipline_group == "bjj"
+    # public plan carries no live/bookable data
+    assert bjj.source == "schedule"
+    assert bjj.bookable is False
+    assert bjj.class_id == ""
+    assert bjj.spots_available is None
+
+
+def test_parse_public_week_discipline_tagging():
+    week = parse_public_week(_read("public_week.html"))
+    by_name = {c.name: c.discipline_group for c in week["2026-09-21"]}
+    assert by_name["Thaiboksning Fundamentals"] == "thai boxing"
+    assert by_name["WOD and Coffee"] == "wod"
+
+
+def test_parse_public_week_structural_break_raises():
+    with pytest.raises(ParseError):
+        parse_public_week("<html><body>a totally different page</body></html>")
 
 
 def test_resolve_discipline_aliases():

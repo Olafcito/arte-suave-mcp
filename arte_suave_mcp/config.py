@@ -11,6 +11,18 @@ BASE = "https://am.artesuave.dk"
 PORTAL_ENTRY = f"{BASE}/a/artesuave/webshop"
 ACCOUNT = f"{BASE}/webshop/Account/index.php"
 
+# --- Public weekly schedule (artesuave.dk marketing site, no auth) -----------
+# The member portal only returns today + a short upcoming window (past days and
+# next week come back empty). The public WordPress schedule publishes every week,
+# past and future, keyed by that week's Monday. It carries no live spots/booking,
+# so classes from here are the *planned* schedule (subject to change).
+PUBLIC_BASE = "https://artesuave.dk"
+PUBLIC_SCHEDULE = f"{PUBLIC_BASE}/traeningstider/"
+PUBLIC_START_PARAM = "StartDate"  # value is a Monday, formatted DD-MM-YYYY
+PUBLIC_WAF_VERIFY_URL = f"{PUBLIC_BASE}/.sc-verify/"
+PUBLIC_WAF_COOKIE_DOMAIN = "artesuave.dk"
+PUBLIC_SCHEDULE_CACHE_TTL = 3600  # public plan changes rarely; cache a week for 1h
+
 # --- WAF (simply.com proof-of-work) -----------------------------------------
 WAF_VERIFY_URL = f"{BASE}/.sc-verify/"
 WAF_CHALLENGE_MARKERS = ("Checking your browser", "Security Incident", "sc-challenge")
@@ -44,6 +56,21 @@ SEL = {
     "spots_count": ".md-class-row__spots-count",
     "signup_form": "form.mu-signup-form",
     "main": ".mu-training__main",
+}
+# Public weekly-schedule markup: day is an <h1> ("Monday 21 Sep 2026"), the mat/
+# location an <h5>, then a table of classes (Tid / Hold / Instruktører).
+PUBLIC_SEL = {
+    "day_heading": "h1",
+    "mat_heading": "h5",
+    "table": "table",
+    "table_class": "w3-table",  # class marker on the schedule tables
+    "row": "tr",
+    "cell": "td",
+    "class_link": "a",
+}
+PUBLIC_MONTHS = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
 }
 FIELD = {
     "row_id_attr": "id",  # element id on .md-class-row == WorkScheduleID

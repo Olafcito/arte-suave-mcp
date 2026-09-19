@@ -10,14 +10,15 @@ import contextvars
 import datetime as dt
 import time
 
-from . import config, creds
-from .client import AuthError, PortalClient, WAFError
+from . import config, creds, feedback
+from .client import AuthError, PortalClient, WAFError, get_public
 from .models import error, ok, parse_failed
 from .parsers import (
     ParseError,
     find_csrf_for,
     parse_attendance,
     parse_bookings,
+    parse_public_week,
     parse_schedule,
 )
 from .session_store import SessionStore, build_backend
@@ -31,6 +32,8 @@ _current_user: contextvars.ContextVar[str] = contextvars.ContextVar(
 _clients: dict[str, PortalClient] = {}
 # keyed by (user_id, day) so one user's booking state never bleeds into another's
 _schedule_cache: dict[tuple[str, str], tuple[float, str]] = {}
+# public weekly plan is identical for everyone -> cache by week-start (Monday iso)
+_public_week_cache: dict[str, tuple[float, dict[str, list]]] = {}
 
 
 def set_current_user(user_id: str) -> contextvars.Token:
@@ -78,6 +81,44 @@ def _fetch_schedule_day(day: str) -> str:
     return html
 
 
+def _use_portal(day: dt.date) -> bool:
+    """True for days the member portal actually serves with live data: today
+    through the end of the current week. Past days (even this week) and future
+    weeks come from the public plan instead."""
+    today = _today()
+    week_end = today + dt.timedelta(days=6 - today.weekday())  # Sunday of this week
+    return today <= day <= week_end
+
+
+def _monday_of(day: dt.date) -> dt.date:
+    return day - dt.timedelta(days=day.weekday())
+
+
+def _fetch_public_week(monday: dt.date) -> dict[str, list]:
+    """Fetch + parse the public plan for the week starting `monday` (cached)."""
+    key = monday.isoformat()
+    now = time.monotonic()
+    cached = _public_week_cache.get(key)
+    if cached and now - cached[0] < config.PUBLIC_SCHEDULE_CACHE_TTL:
+        return cached[1]
+    param = monday.strftime("%d-%m-%Y")
+    url = f"{config.PUBLIC_SCHEDULE}?{config.PUBLIC_START_PARAM}={param}"
+    html = get_public(url)
+    week = {d: [c.model_dump() for c in rows] for d, rows in parse_public_week(html).items()}
+    _public_week_cache[key] = (now, week)
+    return week
+
+
+def _public_days(days: list[str]) -> dict[str, list]:
+    """Return {day: [class dicts]} for the given ISO days from the public plan,
+    fetching each distinct week only once."""
+    result: dict[str, list] = {}
+    weeks = {_monday_of(dt.date.fromisoformat(d)) for d in days}
+    for monday in sorted(weeks):
+        result.update(_fetch_public_week(monday))
+    return {d: result.get(d, []) for d in days}
+
+
 # -- tools --------------------------------------------------------------------
 def get_schedule(
     discipline: str | None = None,
@@ -92,9 +133,14 @@ def get_schedule(
             note=f"'{discipline}' matched no known discipline group",
             known_groups=list(config.DISCIPLINE_ALIASES),
         )
-    classes: list[dict] = []
     days = _daterange(date_from, date_to)
-    for day in days:
+    # Split by source: the portal has live data only for today..end-of-week;
+    # everything else (past days, future weeks) comes from the public plan.
+    portal_days = [d for d in days if _use_portal(dt.date.fromisoformat(d))]
+    plan_days = [d for d in days if d not in portal_days]
+
+    classes: list[dict] = []
+    for day in portal_days:
         try:
             html = _fetch_schedule_day(day)
         except (AuthError, WAFError) as e:
@@ -103,16 +149,33 @@ def get_schedule(
             rows = parse_schedule(html, date=day)
         except ParseError as e:
             return parse_failed(e.step, e.expected, html, detail=e.detail)
-        for c in rows:
-            if group and not config.class_matches_discipline(c.name, group):
-                continue
-            classes.append(c.model_dump())
-    return ok(
-        classes,
-        matched_discipline=group,
-        days=days,
-        filtered=bool(group),
-    )
+        classes.extend(c.model_dump() for c in rows)
+
+    planned = 0
+    if plan_days:
+        try:
+            week = _public_days(plan_days)
+        except (AuthError, WAFError) as e:
+            return error("fetch_public_schedule", str(e))
+        except ParseError as e:
+            return parse_failed(e.step, e.expected, "", detail=e.detail)
+        for day in plan_days:
+            classes.extend(week[day])
+            planned += len(week[day])
+
+    if group:
+        classes = [c for c in classes if config.class_matches_discipline(c["name"], group)]
+    classes.sort(key=lambda c: (c.get("date") or "", c.get("start") or ""))
+
+    extra: dict = {"matched_discipline": group, "days": days, "filtered": bool(group)}
+    if planned:
+        extra["note"] = (
+            "Some classes have source='schedule': they come from Arte Suave's "
+            "public weekly plan (past days and future weeks). They may change and "
+            "have no live spots or booking. Live spots/booking exist only on "
+            "source='portal' (this week's upcoming classes)."
+        )
+    return ok(classes, **extra)
 
 
 def get_my_bookings() -> dict:
@@ -148,14 +211,43 @@ def get_history(date_from: str | None = None, date_to: str | None = None) -> dic
 
 
 def book_class(class_id: str) -> dict:
-    return _signup(class_id, config.FIELD["book_value"], "book_class")
+    return _signup(class_id, config.FIELD["book_value"], "book_class", expect_booked=True)
 
 
 def cancel_booking(booking_id: str) -> dict:
-    return _signup(booking_id, config.FIELD["cancel_value"], "cancel_booking")
+    return _signup(
+        booking_id, config.FIELD["cancel_value"], "cancel_booking", expect_booked=False
+    )
 
 
-def _signup(work_schedule_id: str, action_value: str, step: str) -> dict:
+def _booked_ids() -> set[str]:
+    """The WorkScheduleIDs currently in the user's bookings (fresh fetch)."""
+    html = get_client().get_authed(f"{config.ACCOUNT}{config.Q_BOOKINGS}")
+    return {b.class_id for b in parse_bookings(html)}
+
+
+def _confirm_signup(work_schedule_id: str, expect_booked: bool, step: str) -> dict:
+    """Verify a book/cancel actually took by reading get_my_bookings back."""
+    wsid = str(work_schedule_id)
+    try:
+        present = wsid in _booked_ids()
+    except (AuthError, WAFError) as e:
+        return error(step, f"submitted but could not confirm via get_my_bookings: {e}")
+    except ParseError as e:
+        return parse_failed(e.step, e.expected, "", detail=e.detail)
+    if expect_booked and not present:
+        return error(step, "submitted, but the class did not appear in your bookings")
+    if not expect_booked and present:
+        return error(step, "submitted, but the class is still in your bookings")
+    return ok(
+        {"class_id": wsid, "booked": present, "confirmed": True},
+        message="booked" if expect_booked else "cancelled",
+    )
+
+
+def _signup(
+    work_schedule_id: str, action_value: str, step: str, *, expect_booked: bool
+) -> dict:
     """Find the fresh csrf for the class across the schedule window, then POST.
 
     Booking/cancel needs the per-render csrf that lives on the class's own row.
@@ -193,21 +285,25 @@ def _signup(work_schedule_id: str, action_value: str, step: str) -> dict:
             body = resp.json()
         except ValueError:
             pass
-        result = {"class_id": str(work_schedule_id), "action": action_value}
-        if body is not None:
-            if body.get("ok") is False:
-                return error(step, body.get("message", "portal rejected the request"))
-            return ok(result, message=body.get("message"))
-        # HTML response: caller should confirm via get_my_bookings
-        return ok(
-            result,
-            message="submitted; confirm via get_my_bookings",
-            http_status=resp.status_code,
-        )
+        if body is not None and body.get("ok") is False:
+            return error(step, body.get("message", "portal rejected the request"))
+        # Always confirm the write actually landed by reading bookings back.
+        return _confirm_signup(work_schedule_id, expect_booked, step)
     return error(
         step,
         f"class {work_schedule_id} not found in the next {config.MAX_SCHEDULE_DAYS} days",
     )
+
+
+def submit_feedback(message: str, context: str | None = None) -> dict:
+    """Record feedback (e.g. something the user disagreed with) for later review."""
+    if not (message or "").strip():
+        return error("submit_feedback", "message is required")
+    try:
+        rec = feedback.store(_current_user.get(), message, context)
+    except Exception as e:  # storage should never crash the tool
+        return error("submit_feedback", f"could not store feedback: {e}")
+    return ok(rec, message="feedback recorded")
 
 
 def debug_fetch(target: str) -> dict:
@@ -285,6 +381,14 @@ def health_check() -> dict:
         "history",
         lambda: get_client().get_authed(f"{config.ACCOUNT}{config.Q_STATS}"),
         lambda h: {"total": parse_attendance(h).total},
+    )
+    monday = _monday_of(_today())
+    results["public_schedule"] = probe(
+        "public_schedule",
+        lambda: get_public(
+            f"{config.PUBLIC_SCHEDULE}?{config.PUBLIC_START_PARAM}={monday.strftime('%d-%m-%Y')}"
+        ),
+        lambda h: {"days": len(parse_public_week(h))},
     )
     overall = "ok" if all(v.get("status") == "ok" for v in results.values()) else "degraded"
     return ok(results, overall=overall)

@@ -57,6 +57,15 @@ def cancel_booking(booking_id: str) -> dict:
 
 
 @mcp.tool
+def submit_feedback(message: str, context: str | None = None) -> dict:
+    """Send feedback to the server's owner — use this when the user disagrees
+    with something, spots a wrong answer, or wants a tool/behaviour changed.
+    `message` is the feedback in the user's words; `context` optionally captures
+    what prompted it (the question asked, the tool output they objected to)."""
+    return service.submit_feedback(message, context)
+
+
+@mcp.tool
 def health_check() -> dict:
     """Verify login and that each parser still returns sane data, per endpoint."""
     return service.health_check()

@@ -33,6 +33,51 @@ class WAFError(RuntimeError):
     pass
 
 
+_public_client: httpx.Client | None = None
+
+
+def get_public(url: str) -> str:
+    """GET a page on the public marketing site (no login).
+
+    Uses one shared client with real browser headers — the WAF hard-blocks a
+    bare user-agent but lets a normal browser request straight through. If it
+    ever does serve the solvable proof-of-work challenge, we clear it the same
+    way the portal client does and retry once.
+    """
+    global _public_client
+    if _public_client is None:
+        _public_client = httpx.Client(
+            headers=config.DEFAULT_HEADERS,
+            follow_redirects=True,
+            timeout=config.REQUEST_TIMEOUT,
+        )
+    resp = _public_client.get(url)
+    if waf.is_challenge(resp.text):
+        params = waf.parse_challenge(resp.text)
+        if not params:
+            raise WAFError("public challenge page had no solvable PoW parameters")
+        token, ts, difficulty = params
+        nonce = waf.solve(token, difficulty)
+        vr = _public_client.post(
+            config.PUBLIC_WAF_VERIFY_URL,
+            data={"ts": ts, "nonce": str(nonce), "token": token},
+        )
+        try:
+            body = vr.json()
+        except ValueError as exc:
+            raise WAFError(f"unexpected /.sc-verify/ response: {vr.status_code}") from exc
+        if not body.get("ok"):
+            raise WAFError(f"WAF rejected PoW: {body.get('error', 'unknown')}")
+        _public_client.cookies.set(
+            config.WAF_CLEARANCE_COOKIE, body["cookie"],
+            domain=config.PUBLIC_WAF_COOKIE_DOMAIN,
+        )
+        resp = _public_client.get(url)
+    if resp.status_code >= 400:
+        raise WAFError(f"public schedule fetch failed: HTTP {resp.status_code}")
+    return resp.text
+
+
 class PortalClient:
     def __init__(self, creds: Creds, store: SessionStore | None = None) -> None:
         self._creds = creds

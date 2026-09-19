@@ -12,15 +12,22 @@ the portal, including solving the site's proof-of-work shield in pure Python.
 
 | Tool | What it does |
 |---|---|
-| `get_schedule(discipline?, date_from?, date_to?)` | Classes with name, discipline group, trainer, start/end, location, spots. `discipline` matches loosely — "kickboxing", "muay thai", "K1" all resolve to thai boxing — and the gym's **original** class name is always returned. |
+| `get_schedule(discipline?, date_from?, date_to?)` | Classes with name, discipline group, trainer, start/end, location, spots. Pulls **live** data (real spots, bookable) from the member portal for this week's upcoming days, and the **planned** weekly schedule (any past/future week, no spots, not bookable) from the public site — each class tagged `source` = `portal` or `schedule`. `discipline` matches loosely — "kickboxing", "muay thai", "K1" all resolve to thai boxing — and the gym's **original** class name is always returned. |
 | `get_my_bookings()` | Classes you're signed up for. |
 | `get_history(date_from?, date_to?)` | Attendance: this-month / 30-day / all-time counts, hours, latest training, per-discipline breakdown. |
-| `book_class(class_id)` / `cancel_booking(booking_id)` | Book / cancel (writes to your account). |
-| `health_check()` | Verifies login + each parser, per endpoint. |
+| `book_class(class_id)` / `cancel_booking(booking_id)` | Book / cancel (writes to your account). Each **self-confirms** by reading your bookings back — returns an error if the change didn't actually land. |
+| `submit_feedback(message, context?)` | Records feedback (e.g. something the user disagreed with) for the owner to review. |
+| `health_check()` | Verifies login + each parser, per endpoint (incl. the public schedule). |
 | `debug_fetch(target)` | Sanitized raw HTML for a target, so the assistant can adapt if the site changes. |
 
-Example asks: *"What thai boxing classes are on this week?"*, *"When is Michael
-teaching?"*, *"How many times have I trained this month?"*
+Example asks: *"What thai boxing classes are on this week?"*, *"Which classes
+were on last week?"*, *"What's the muay thai schedule next week?"*, *"How many
+times have I trained this month?"*
+
+The schedule spans past and future because it reads two sources. The member
+portal only serves the current week's upcoming days (with live spots and
+booking); everything else — days already past, and future weeks — comes from
+the gym's public weekly schedule, which is the *plan* and may still change.
 
 ## Resilience by design
 
@@ -167,9 +174,11 @@ arte_suave_mcp/
   config.py    endpoints, selectors, discipline aliases (edit here when the site changes)
   models.py    pydantic models + ok/parse_failed/error envelope
   waf.py       simply.com proof-of-work solver
-  client.py    httpx session client: WAF clearance, login, reuse, one-retry re-login
-  parsers.py   selectolax parsers (isolated)
-  service.py   tool logic (framework-agnostic)
+  client.py    httpx session client: WAF clearance, login, reuse, one-retry re-login;
+               plus get_public() for the no-auth public weekly schedule
+  parsers.py   selectolax parsers (isolated): portal pages + public weekly schedule
+  service.py   tool logic (framework-agnostic); routes schedule days portal-vs-public
+  feedback.py  stores submit_feedback notes (DynamoDB; in-memory fallback locally)
   server.py    FastMCP tools + ASGI app + per-user auth gate (secret / token / OAuth)
   oauth.py     OAuth 2.1 server: discovery, DCR, login page, /authorize + /token (PKCE)
   creds.py / session_store.py   per-user SSM creds + identity; memory/file/DynamoDB session

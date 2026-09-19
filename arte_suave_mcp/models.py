@@ -31,6 +31,14 @@ class ClassInfo(BaseModel):
     capacity: int | None = None
     bookable: bool = Field(default=False, description="a signup form was present")
     booking_open: bool = True
+    source: str = Field(
+        default="portal",
+        description=(
+            "'portal' = live member data (real spots, bookable this week); "
+            "'schedule' = the public weekly plan (any week, no live spots, "
+            "not bookable, subject to change)"
+        ),
+    )
 
 
 class Booking(ClassInfo):
