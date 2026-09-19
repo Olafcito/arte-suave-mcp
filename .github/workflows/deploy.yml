@@ -1,0 +1,48 @@
+name: deploy
+
+# Deploy to AWS on every push to main — i.e. when a PR is merged.
+on:
+  push:
+    branches: [main]
+
+# Least privilege: request an OIDC token (to assume the deploy role) and read
+# the repo. Nothing else.
+permissions:
+  id-token: write
+  contents: read
+
+# Never run two deploys at once; let an in-flight one finish rather than cancel.
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv (+ Python 3.12)
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Tests + lint
+        run: |
+          uv run pytest -q
+          uv run ruff check .
+
+      - name: Configure AWS credentials (GitHub OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::415407325274:role/artesuave-mcp-deploy
+          aws-region: eu-north-1
+
+      # deploy.sh uses ambient credentials when AWS_ACCESS_KEY_ID is present
+      # (set by the step above), so no AWS_PROFILE is needed here.
+      - name: Deploy
+        run: bash infra/deploy.sh

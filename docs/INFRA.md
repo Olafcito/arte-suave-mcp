@@ -115,9 +115,31 @@ Suave credentials, verifies them against the portal, and stores them.
 - **Cost.** One customer-managed KMS key is ~$1/mo plus per-request charges — the
   only line item that nudges this above $0. Still pennies overall.
 
+## CI: deploy on merge to main (GitHub OIDC)
+
+`.github/workflows/deploy.yml` runs `infra/deploy.sh` on every push to `main`
+(i.e. when a PR merges), after `pytest` + `ruff`. It authenticates with **GitHub
+OIDC** — no AWS keys are stored in GitHub. The workflow assumes a dedicated
+least-privilege role, `artesuave-mcp-deploy`:
+
+- **Trust** — only `token.actions.githubusercontent.com` for
+  `repo:Olafcito/arte-suave-mcp:ref:refs/heads/main` (aud `sts.amazonaws.com`).
+  No human/user principal can assume it. Reuses the account's existing OIDC
+  provider (shared with other projects — there can only be one per issuer URL).
+- **Permissions** — scoped to this project's resources only: the `artesuave-mcp`
+  CloudFormation stack (+ the SAM transform macro), the deploy S3 bucket, the
+  `artesuave-mcp*` Lambda + the external LWA layer, `iam:PassRole`/manage limited
+  to `artesuave-mcp-lambda-role`, the `artesuave-mcp-sessions` DynamoDB table, the
+  `alias/artesuave-mcp-creds` KMS key, and the specific API Gateway id. It cannot
+  touch nettoday/Tallyday resources. The policy was validated by assuming the
+  role and running a full deploy under it before wiring CI.
+- `deploy.sh` uses ambient credentials when `AWS_ACCESS_KEY_ID` is set (CI/OIDC)
+  and otherwise falls back to the `nettoday-admin` profile for local runs.
+
 ## Redeploy / teardown
 
-- Deploy / update: `infra/deploy.sh` (builds Linux wheels with uv — no Docker).
+- Deploy / update: `infra/deploy.sh` (builds Linux wheels with uv — no Docker);
+  or just merge to `main` and CI deploys.
 - Rotate secrets: `infra/put-secrets.sh`.
 - Teardown: `aws cloudformation delete-stack --stack-name artesuave-mcp
   --profile nettoday-admin --region eu-north-1` then empty+delete the deploy

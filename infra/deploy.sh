@@ -18,12 +18,20 @@ export MSYS_NO_PATHCONV=1
 winpath() { command -v cygpath >/dev/null 2>&1 && cygpath -m "$1" || printf '%s' "$1"; }
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROFILE="${AWS_PROFILE:-nettoday-admin}"
+# Pick auth: use ambient credentials when the caller already supplied them (CI
+# via OIDC sets AWS_ACCESS_KEY_ID, or someone chose an explicit AWS_PROFILE);
+# otherwise fall back to the nettoday-admin profile for local dev.
+if [ -n "${AWS_ACCESS_KEY_ID:-}" ] || [ -n "${AWS_PROFILE:-}" ]; then
+  PROFILE="${AWS_PROFILE:-}"
+else
+  PROFILE="nettoday-admin"
+fi
 REGION="${AWS_REGION:-eu-north-1}"
 STACK="${STACK:-artesuave-mcp}"
 LWA="${LWA_LAYER_ARN:-arn:aws:lambda:eu-north-1:753240598075:layer:LambdaAdapterLayerX86:30}"
 UV="${UV:-uv}"
-AWS=(aws --profile "$PROFILE" --region "$REGION")
+AWS=(aws --region "$REGION")
+[ -n "$PROFILE" ] && AWS+=(--profile "$PROFILE")
 
 BUILD="$ROOT/.build"
 DIST="$BUILD/pkg"
