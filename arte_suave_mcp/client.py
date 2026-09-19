@@ -36,6 +36,27 @@ class WAFError(RuntimeError):
 _public_client: httpx.Client | None = None
 
 
+def _clear_challenge(
+    client: httpx.Client, html: str, verify_url: str, cookie_domain: str, *, what: str
+) -> None:
+    """Solve the simply.com PoW challenge in `html` and set the clearance cookie
+    on `client`. Shared by the portal and public-site clients — they differ only
+    in verify URL, cookie domain, and the phrasing of the no-params error."""
+    params = waf.parse_challenge(html)
+    if not params:
+        raise WAFError(f"{what} had no solvable PoW parameters")
+    token, ts, difficulty = params
+    nonce = waf.solve(token, difficulty)
+    resp = client.post(verify_url, data={"ts": ts, "nonce": str(nonce), "token": token})
+    try:
+        body = resp.json()
+    except ValueError as exc:
+        raise WAFError(f"unexpected /.sc-verify/ response: {resp.status_code}") from exc
+    if not body.get("ok"):
+        raise WAFError(f"WAF rejected PoW: {body.get('error', 'unknown')}")
+    client.cookies.set(config.WAF_CLEARANCE_COOKIE, body["cookie"], domain=cookie_domain)
+
+
 def get_public(url: str) -> str:
     """GET a page on the public marketing site (no login).
 
@@ -53,24 +74,12 @@ def get_public(url: str) -> str:
         )
     resp = _public_client.get(url)
     if waf.is_challenge(resp.text):
-        params = waf.parse_challenge(resp.text)
-        if not params:
-            raise WAFError("public challenge page had no solvable PoW parameters")
-        token, ts, difficulty = params
-        nonce = waf.solve(token, difficulty)
-        vr = _public_client.post(
+        _clear_challenge(
+            _public_client,
+            resp.text,
             config.PUBLIC_WAF_VERIFY_URL,
-            data={"ts": ts, "nonce": str(nonce), "token": token},
-        )
-        try:
-            body = vr.json()
-        except ValueError as exc:
-            raise WAFError(f"unexpected /.sc-verify/ response: {vr.status_code}") from exc
-        if not body.get("ok"):
-            raise WAFError(f"WAF rejected PoW: {body.get('error', 'unknown')}")
-        _public_client.cookies.set(
-            config.WAF_CLEARANCE_COOKIE, body["cookie"],
-            domain=config.PUBLIC_WAF_COOKIE_DOMAIN,
+            config.PUBLIC_WAF_COOKIE_DOMAIN,
+            what="public challenge page",
         )
         resp = _public_client.get(url)
     if resp.status_code >= 400:
@@ -103,23 +112,12 @@ class PortalClient:
         self.store.put_cookies({c.name: c.value for c in self._client.cookies.jar})
 
     def _clear_waf(self, html: str) -> None:
-        params = waf.parse_challenge(html)
-        if not params:
-            raise WAFError("challenge page had no solvable PoW parameters")
-        token, ts, difficulty = params
-        nonce = waf.solve(token, difficulty)
-        resp = self._client.post(
+        _clear_challenge(
+            self._client,
+            html,
             config.WAF_VERIFY_URL,
-            data={"ts": ts, "nonce": str(nonce), "token": token},
-        )
-        try:
-            body = resp.json()
-        except ValueError as exc:
-            raise WAFError(f"unexpected /.sc-verify/ response: {resp.status_code}") from exc
-        if not body.get("ok"):
-            raise WAFError(f"WAF rejected PoW: {body.get('error', 'unknown')}")
-        self._client.cookies.set(
-            config.WAF_CLEARANCE_COOKIE, body["cookie"], domain="am.artesuave.dk"
+            "am.artesuave.dk",
+            what="challenge page",
         )
 
     def _raw_get(self, url: str) -> httpx.Response:

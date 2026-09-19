@@ -12,7 +12,7 @@ import time
 
 from . import config, creds, feedback
 from .client import AuthError, PortalClient, WAFError, get_public
-from .models import error, ok, parse_failed
+from .models import error, ok, parse_failed, sanitize_html
 from .parsers import (
     ParseError,
     find_csrf_for,
@@ -323,26 +323,9 @@ def debug_fetch(target: str) -> dict:
         return error("debug_fetch", str(e))
     return ok(
         {"target": target, "url": url, "length": len(html)},
-        raw_excerpt=_sanitize(html)[: config.RAW_EXCERPT_MAX],
+        raw_excerpt=sanitize_html(html)[: config.RAW_EXCERPT_MAX],
         raw_truncated=len(html) > config.RAW_EXCERPT_MAX,
     )
-
-
-def _sanitize(html: str) -> str:
-    """Strip the notification/inbox regions (personal messages) and any token
-    strings before returning raw HTML."""
-    import re
-
-    # drop the notification bell dropdowns (contain personal message previews)
-    html = re.sub(
-        r'<div class="md-bell-dropdown".*?</div></div></div>',
-        "<!--bell-->",
-        html,
-        flags=re.S,
-    )
-    html = re.sub(r'name="csrf" value="[0-9a-f]+"', 'name="csrf" value="***"', html)
-    html = re.sub(r"(PHPSESSID=)[^;&\s\"']+", r"\1***", html)
-    return html
 
 
 def health_check() -> dict:

@@ -26,11 +26,16 @@ class ParseError(Exception):
         super().__init__(f"{step}: expected {expected}" + (f" ({detail})" if detail else ""))
 
 
+def _norm(text: str) -> str:
+    """Collapse runs of whitespace to single spaces and strip the ends."""
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def _text(node, sel: str) -> str | None:
     el = node.css_first(sel)
     if el is None:
         return None
-    return re.sub(r"\s+", " ", el.text()).strip() or None
+    return _norm(el.text()) or None
 
 
 def _clean_time(raw: str | None) -> str | None:
@@ -102,11 +107,6 @@ def parse_schedule(html: str, date: str | None = None) -> list[ClassInfo]:
             return []
         raise ParseError("schedule", f"at least one '{S['row']}' or the training UI")
     return [_parse_row(r, date) for r in rows]
-
-
-def _norm(text: str) -> str:
-    """Collapse runs of whitespace to single spaces and strip the ends."""
-    return re.sub(r"\s+", " ", text).strip()
 
 
 def _discipline_group(name: str) -> str | None:

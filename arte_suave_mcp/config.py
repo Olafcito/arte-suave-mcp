@@ -35,8 +35,6 @@ LOGIN_URL = f"{BASE}/ajax/AjaxJson.php?action=LoginUser"
 ACCOUNT_ID = "1"  # Arte Suave club id (hidden field on the login form)
 # Markers that mean "this HTML is the logged-out login page", i.e. re-login.
 LOGGED_OUT_MARKERS = ('name="password"', "PasswordResetRequest")
-# Marker that means "this HTML is an authed member page".
-LOGGED_IN_MARKERS = ("member-nav", "Log ud", "ShowProfile")
 
 # --- Data endpoints (query strings appended to ACCOUNT) ----------------------
 Q_SCHEDULE = "?Show=ShowProfile&action=SignUpforclasses"

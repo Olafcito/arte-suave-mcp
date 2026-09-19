@@ -46,6 +46,12 @@ CODE_TTL = 300  # 5 min
 ACCESS_TTL = 30 * 24 * 3600  # 30 days
 REFRESH_TTL = 180 * 24 * 3600  # 180 days
 
+# OAuth request params carried through the login page (GET -> hidden fields -> POST).
+_FORWARD_PARAMS = (
+    "client_id", "redirect_uri", "state", "code_challenge",
+    "code_challenge_method", "scope", "resource",
+)
+
 # small in-process cache so a warm connector doesn't hit DynamoDB every request
 _token_cache: dict[str, tuple[str | None, float]] = {}
 _TOKEN_CACHE_TTL = 60.0
@@ -410,15 +416,9 @@ async def handle(scope, receive, send, base_url: str) -> None:
 async def _authorize(scope, receive, send, method: str, query: dict) -> None:
     if method == "POST":
         form = urllib.parse.parse_qs((await _read_body(receive)).decode())
-        params = {k: form.get(k, [""])[0] for k in (
-            "client_id", "redirect_uri", "state", "code_challenge",
-            "code_challenge_method", "scope", "resource", "email", "password",
-        )}
+        params = {k: form.get(k, [""])[0] for k in (*_FORWARD_PARAMS, "email", "password")}
     else:
-        params = {k: query.get(k, [""])[0] for k in (
-            "client_id", "redirect_uri", "state", "code_challenge",
-            "code_challenge_method", "scope", "resource",
-        )}
+        params = {k: query.get(k, [""])[0] for k in _FORWARD_PARAMS}
 
     client_id = params["client_id"]
     redirect_uri = params["redirect_uri"]
@@ -526,8 +526,7 @@ def _login_page(params: dict, error: str | None = None) -> str:
     esc = _html_escape
     hidden = "".join(
         f'<input type="hidden" name="{esc(k)}" value="{esc(params.get(k, ""))}">'
-        for k in ("client_id", "redirect_uri", "state", "code_challenge",
-                  "code_challenge_method", "scope", "resource")
+        for k in _FORWARD_PARAMS
     )
     err = f'<p class="error">{esc(error)}</p>' if error else ""
     return f"""<!doctype html>

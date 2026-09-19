@@ -8,11 +8,30 @@ calling harness can read it and adapt.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+import re
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 from .config import RAW_EXCERPT_MAX
+
+
+def sanitize_html(html: str) -> str:
+    """Strip personal/secret regions before any raw HTML leaves the server.
+
+    Drops the notification bell dropdowns (personal message previews) and
+    redacts CSRF tokens and the session cookie. Every raw excerpt we return —
+    from a parse failure or from debug_fetch — goes through this first.
+    """
+    html = re.sub(
+        r'<div class="md-bell-dropdown".*?</div></div></div>',
+        "<!--bell-->",
+        html,
+        flags=re.S,
+    )
+    html = re.sub(r'name="csrf" value="[0-9a-f]+"', 'name="csrf" value="***"', html)
+    html = re.sub(r"(PHPSESSID=)[^;&\s\"']+", r"\1***", html)
+    return html
 
 
 class ClassInfo(BaseModel):
@@ -68,14 +87,14 @@ def parse_failed(
     step: str, expected: str, raw: str, *, detail: str | None = None
 ) -> dict:
     """Structured non-fatal failure the harness can act on."""
-    excerpt = (raw or "")[:RAW_EXCERPT_MAX]
+    clean = sanitize_html(raw or "")
     return {
         "status": "parse_failed",
         "step": step,
         "expected": expected,
         "detail": detail,
-        "raw_excerpt": excerpt,
-        "raw_truncated": len(raw or "") > RAW_EXCERPT_MAX,
+        "raw_excerpt": clean[:RAW_EXCERPT_MAX],
+        "raw_truncated": len(clean) > RAW_EXCERPT_MAX,
     }
 
 
@@ -84,6 +103,3 @@ def error(step: str, message: str, *, raw: str | None = None) -> dict:
     if raw is not None:
         out["raw_excerpt"] = raw[:RAW_EXCERPT_MAX]
     return out
-
-
-StatusLiteral = Literal["ok", "parse_failed", "error"]
