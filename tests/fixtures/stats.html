@@ -1,0 +1,223 @@
+<div class="member-training-hub member-dashboard-v2 member-dashboard-v3"><header class="mu-hub-header mth-hub-header mb-3 mb-lg-4"><h1 class="h3 fw-semibold mb-1">Træning</h1><p class="text-body-secondary mb-0 small">Find hold, se dine tilmeldinger og dit fremmøde.</p></header><nav class="meh-tabs mb-3 mu-hub-tabs mth-tabs" aria-label="Træningsnavigation"><a href="?Show=ShowProfile&amp;action=SignUpforclasses" class="meh-tabs__item">Holdplan</a><a href="?Show=ShowProfile&amp;action=Bookings" class="meh-tabs__item">Mine tilmeldinger</a><a href="?Show=ShowProfile&amp;action=Stats" class="meh-tabs__item meh-tabs__item--active" aria-current="page">Fremmøde</a><a href="?Show=ShowProfile&amp;action=PrivateTraining" class="meh-tabs__item">Privatundervisning</a></nav><section class="mth-attendance mb-4" aria-labelledby="mth-attendance-heading"><h2 id="mth-attendance-heading" class="h5 fw-semibold mb-3">Fremmøde</h2><div class="row g-3 mb-3"><div class="col-6 col-md-4"><div class="mth-stat-card"><div class="mth-stat-card__label">Denne måned</div><div class="mth-stat-card__value">13</div><div class="mth-stat-card__hint">træninger</div></div></div><div class="col-6 col-md-4"><div class="mth-stat-card"><div class="mth-stat-card__label">Seneste 30 dage</div><div class="mth-stat-card__value">18</div><div class="mth-stat-card__hint">træninger</div></div></div><div class="col-12 col-md-4"><div class="mth-stat-card"><div class="mth-stat-card__label">I alt</div><div class="mth-stat-card__value">180</div><div class="mth-stat-card__hint">træninger</div></div></div></div><p class="small text-body-secondary mb-0">Seneste træning: <strong>19.09.2026</strong> · Thaiboksning</p></section><details class="mth-attendance-more"><summary class="mth-attendance-more__summary">Se mere statistik</summary><div class="mt-3"><div class="member-stats-page"><section class="card border-0 shadow-sm rounded-3 mb-4 overflow-hidden" aria-labelledby="stats-attendance-heading"><div class="card-header bg-body-tertiary border-bottom py-3 px-4"><h2 id="stats-attendance-heading" class="h5 mb-0">Deltagelse</h2></div><div class="card-body p-4"><div class="row g-3 mb-4"><div class="col-12 col-md-4"><div class="rounded-3 border bg-body-tertiary p-3 h-100"><div class="small text-uppercase text-body-secondary fw-semibold mb-1">Tilmeldinger</div><div class="fs-4 fw-semibold text-body lh-sm">I alt 180 tilmeldinger</div></div></div><div class="col-12 col-md-4"><div class="rounded-3 border bg-body-tertiary p-3 h-100"><div class="small text-uppercase text-body-secondary fw-semibold mb-1">Timer</div><div class="fs-4 fw-semibold text-body">190,5</div></div></div><div class="col-12 col-md-4"><div class="rounded-3 border bg-body-tertiary p-3 h-100"><div class="small text-uppercase text-body-secondary fw-semibold mb-1">Seneste</div><div class="fw-semibold text-body text-break">19.09.2026 · Thaiboksning</div></div></div></div><div class="rounded-3 bg-body-tertiary p-3 p-md-4 position-relative" style="height:280px"><canvas id="kategoriChart" aria-label="Deltagelser"></canvas></div></div></section><div class="card border-0 shadow-sm rounded-3 mb-4 overflow-hidden">
+                            <div class="card-header bg-body-tertiary border-bottom py-3 px-4 d-flex justify-content-between align-items-center">
+                                <h2 class="h5 mb-0">Gradueringer</h2>
+                            </div>
+                            <div class="card-body p-4">
+                                <div class="row row-cols-1 row-cols-md-3 g-3">
+                                    <!-- Gentag for hvert bælte -->
+                                </div>
+                            </div>
+                        </div><!--Medaljer (under deltagelse, så grafen er synlig uden at scrolle forbi listen) -->
+        <div class="mt-4 pt-4 border-top">
+        <h3 class="h5 mb-3">Medaljer</h3><p class="text-muted small mb-2">Ingen registrerede medaljer endnu.</p><div class="mb-2 stats-medal-chart-wrap" style="min-height:280px;max-width:420px;margin:0 auto;">
+        <canvas id="medaljeChart" height="280" aria-label="Medaljer"></canvas>
+        </div>
+        </div>
+<div class="mt-4 pt-4 border-top">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h3 class="h5 mb-0">Konkurrenceresultater</h3>
+    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addResultModal">
+      <i class="fa-solid fa-plus me-1" aria-hidden="true"></i>Tilføj resultat
+    </button>
+  </div>
+  <ul id="resultsList" class="list-group gap-2 mb-0"></ul>
+</div>
+<div class="modal fade" id="addResultModal" tabindex="-1" aria-labelledby="addResultModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="addResultForm">
+        <div class="modal-header">
+          <h5 class="modal-title" id="addResultModalLabel">Tilføj konkurrence-resultat</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Luk"></button>
+        </div>
+        <div class="modal-body">
+        <div class="mb-2">
+          <label class="form-label">Konkurrence</label>
+          <input type="text" name="competition_name" class="form-control" required="">
+        </div>
+
+        <div class="row g-2">
+          <div class="col-6">
+            <label class="form-label">Vægt</label>
+            <input type="text" name="weight_class" class="form-control" placeholder="fx -76 kg" required="">
+          </div>
+          <div class="col-6">
+            <label class="form-label">Erfaring</label>
+            <input type="text" name="experience" class="form-control" placeholder="fx Beg/Int/Adv" required="">
+          </div>
+        </div>
+
+        <div class="row g-2 mt-1">
+          <div class="col-6">
+            <label class="form-label">Resultat</label>
+            <select name="result" class="form-select" required="">
+              <option value="">Vælg…</option>
+              <option value="2">Guld</option>
+              <option value="3">Sølv</option>
+              <option value="4">Bronze</option>
+              <option value="1">Pokal</option>
+              <option value="5">Deltagelse</option>
+            </select>
+          </div>
+          <div class="col-6">
+            <label class="form-label">År</label>
+            <select name="iYear" class="form-select" required=""><option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option><option value="2023">2023</option><option value="2022">2022</option><option value="2021">2021</option><option value="2020">2020</option><option value="2019">2019</option><option value="2018">2018</option><option value="2017">2017</option><option value="2016">2016</option><option value="2015">2015</option><option value="2014">2014</option><option value="2013">2013</option><option value="2012">2012</option><option value="2011">2011</option></select>
+          </div>
+        </div>
+        </div>
+
+     <div class="modal-footer">
+          <button class="btn btn-secondary" type="button" data-bs-dismiss="modal">Annullér</button>
+          <button class="btn btn-primary" type="submit">
+            <i class="fa-solid fa-floppy-disk me-1" aria-hidden="true"></i>Gem
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script>window.statsPageI18n = {"fill_all":"Udfyld alle felter.","save_failed":"Kunne ikke gemme","error":"Der skete en fejl.","result_prefix":"Resultat:","badge_pending":"Afventer godkendelse","js_badge_gold":"Guld","js_badge_silver":"Sølv","js_badge_bronze":"Bronze","js_badge_trophy":"Pokal","js_badge_participation":"Deltagelse","medal_gold":"Guld","medal_silver":"Sølv","medal_bronze":"Bronze","medal_trophy":"Pokal"};</script><!-- Scripts -->
+<script>
+(function(){
+  const S = window.statsPageI18n || {};
+  const t = function (k, fb) { return (S && S[k]) ? S[k] : fb; };
+  const kLabels = ["Thaiboksning fundamentals","Thaiboksning","Open Gym","MMA","Thaiboksning Sparring","Thaiboksning Øvede","MMA Fundamentals","WOD","Motions Boksning","Open Thaiboksning Træning","WOD & COFFEE"];
+  const kData = [74,30,23,13,13,13,5,4,3,1,1];
+  const kColors = ["#95dbf9","#88b0f2","rgba(65, 65, 65, 0.4)","rgba(255, 39, 0, 0.8)","#33bbff","#2f3cee","rgba(249, 3, 3, 0.8)","rgba(108, 174, 174, 0.52)","rgba(178, 147, 75, 1)","#000000","rgba(163, 56, 0, 0.87)"];
+  // Init Kategori-chart (isoleret så fejl ikke blokerer medalje-grafen)
+  try {
+    const elKat = document.getElementById('kategoriChart');
+    if (elKat && window.Chart && kLabels.length && kData.length && kColors.length) {
+      const ctxKat = elKat.getContext('2d');
+      window.kategoriChart = new Chart(ctxKat, {
+        type: 'bar',
+        data: {
+          labels: kLabels,
+          datasets: [{
+            label: "Deltagelser",
+            data: kData,
+            backgroundColor: kColors,
+            borderColor: kColors,
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          layout: { padding: { top: 4, bottom: 8 } },
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 10, padding: 14, usePointStyle: true } }
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { maxRotation: 40, minRotation: 0 } },
+            y: {
+              beginAtZero: true,
+              ticks: { stepSize: 1, precision: 0 }
+            }
+          }
+        }
+      });
+    }
+  } catch (e) { console.error('kategoriChart', e); }
+
+  // Init Medalje-chart
+  try {
+    const elMed = document.getElementById('medaljeChart');
+    if (elMed && window.Chart) {
+      const ctxMed = elMed.getContext('2d');
+      window.medaljeChart = new Chart(ctxMed, {
+        type: 'doughnut',
+        data: {
+          labels: ["Guld","Sølv","Bronze","Pokal"],
+          datasets: [{
+            data: [0,0,0,0],
+            backgroundColor: ['gold', 'silver', '#cd7f32', '#FFD700']
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom' } }
+        }
+      });
+    }
+  } catch (e) { console.error('medaljeChart', e); }
+
+  const form = document.getElementById('addResultForm');
+  if (!form) return;
+
+  function esc(t){ return String(t||'').replace(/</g,'&lt;'); }
+
+  function renderBadge(result) {
+    switch (parseInt(result,10)) {
+      case 2: return "<span class='badge text-bg-warning' style='color:#000'>" + t('js_badge_gold','Guld') + "</span>";
+      case 3: return "<span class='badge text-bg-secondary'>" + t('js_badge_silver','Sølv') + "</span>";
+      case 4: return "<span class='badge' style='background:#cd7f32;color:#fff'>" + t('js_badge_bronze','Bronze') + "</span>";
+      case 1: return "<span class='badge text-bg-info'>" + t('js_badge_trophy','Pokal') + "</span>";
+      default: return "<span class='badge text-bg-light border text-muted'>" + t('js_badge_participation','Deltagelse') + "</span>";
+    }
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const payload = {
+      AccountID: 1,
+      PBSID: ***REDACTED***,
+      competition_name: (fd.get('competition_name')||'').trim(),
+      weight_class: (fd.get('weight_class')||'').trim(),
+      experience: (fd.get('experience')||'').trim(),
+      result: parseInt(fd.get('result')||0,10),
+      iYear: parseInt(fd.get('iYear')||0,10)
+    };
+
+    if (!payload.competition_name || !payload.weight_class || !payload.experience || !payload.result || !payload.iYear) {
+      alert(t('fill_all','Udfyld alle felter.'));
+      return;
+    }
+
+    try {
+      const res = await fetch('/ajax/AjaxJson.php?action=SaveCompetitionResult', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(()=>({}));
+      if (!res.ok || !data.ok) throw new Error(data.error || t('save_failed','Kunne ikke gemme'));
+
+      const mEl = document.getElementById('addResultModal');
+      if (mEl && window.bootstrap) {
+        const modal = bootstrap.Modal.getInstance(mEl) || new bootstrap.Modal(mEl);
+        modal.hide();
+      }
+
+      const ul = document.getElementById('resultsList');
+      if (ul) {
+            const li = document.createElement('li');
+            li.className = 'list-group-item';
+            const badge = renderBadge(payload.result);
+            li.innerHTML =
+              '<strong>' + esc(payload.competition_name) + '</strong> – ' + payload.iYear + '<br>' +
+              t('result_prefix','Resultat:') + ' ' + badge +
+              " <span class='text-muted ms-1 small'>(" + esc(payload.weight_class) + ', ' + esc(payload.experience) + ')</span>' +
+              ' <span class="badge bg-warning text-dark ms-2">' + t('badge_pending','Afventer godkendelse') + '</span>';
+            ul.prepend(li);
+          }
+
+      if (window.medaljeChart && data.medals) {
+        const order = ['Guld','Sølv','Bronze','Pokal'];
+        const mc = window.medaljeChart;
+        mc.data.labels = [t('medal_gold','Guld'), t('medal_silver','Sølv'), t('medal_bronze','Bronze'), t('medal_trophy','Pokal')];
+        mc.data.datasets[0].data = order.map(k => data.medals[k] || 0);
+        mc.update();
+      }
+
+      form.reset();
+    } catch (err) {
+      alert(err.message || t('error','Der skete en fejl.'));
+      console.error(err);
+    }
+  });
+})();
+</script></div></div></details></div>

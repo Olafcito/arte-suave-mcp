@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+discovery/raw/
+storage_state.json
+.pytest_cache/
+.ruff_cache/
+.aws-sam/
+node_modules/
