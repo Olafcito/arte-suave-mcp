@@ -49,14 +49,20 @@ Evidence gathered during deploy:
 - **API Gateway HTTP API** `artesuave-mcp-api` — public `$default` route →
   Lambda proxy. The app enforces its own bearer secret, so open at the AWS edge
   is fine.
-- **DynamoDB** `artesuave-mcp-sessions` — PAY_PER_REQUEST, single item holding
-  the reusable portal session (cookies). Survives cold starts so we re-login
-  rarely and stay polite to the gym.
+- **DynamoDB** `artesuave-mcp-sessions` — PAY_PER_REQUEST. Holds the reusable
+  portal session (cookies, survives cold starts so we re-login rarely), the
+  OAuth state (`oauth:*`), and `submit_feedback` notes (`feedback#<uid>#<ts>` —
+  no new table). All tiny items.
 - **SSM SecureString** `/artesuave-mcp/{login,password,mcp-secret}` — gym
   credentials + the connector bearer secret. Never in code or env files.
 - **IAM role** `artesuave-mcp-lambda-role` — least privilege: only GetItem/
   PutItem/DeleteItem on the one table, GetParameter on `/artesuave-mcp/*`, and
   kms:Decrypt via SSM. Basic Lambda logging. Nothing else.
+- **Public schedule source** — the `get_schedule` tool also reads the gym's
+  public weekly page (`artesuave.dk/traeningstider`) for past days and future
+  weeks (the member portal only serves the current week's upcoming classes).
+  This is a plain outbound HTTPS GET, no auth and no AWS resources — zero infra
+  and zero cost impact.
 
 ## Free-tier math (personal use, ~hundreds of calls/month)
 
