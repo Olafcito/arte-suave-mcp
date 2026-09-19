@@ -29,9 +29,62 @@ Resources:
       KeySchema:
         - AttributeName: pk
           KeyType: HASH
+      # OAuth codes/tokens carry a `ttl` epoch and auto-expire; session items
+      # omit it and persist.
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
       Tags:
         - Key: project
           Value: artesuave-mcp
+
+  # Dedicated key for user credentials. The key policy grants *cryptographic*
+  # use (encrypt/decrypt) ONLY to the Lambda role — the account admin can manage
+  # or delete the key but cannot decrypt the stored passwords via console/CLI, so
+  # gym passwords are not casually visible. (Not zero-knowledge: the function
+  # must decrypt them at login time, and the account owner could always re-grant
+  # itself — unavoidable against a portal that isn't an OAuth provider.)
+  CredsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: arte-suave-mcp per-user credential encryption (Lambda-only decrypt)
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: Manage (no crypto)
+            Effect: Allow
+            Principal: { AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root" }
+            Action:
+              - kms:Create*
+              - kms:Describe*
+              - kms:Enable*
+              - kms:List*
+              - kms:Put*
+              - kms:Update*
+              - kms:Revoke*
+              - kms:Disable*
+              - kms:Get*
+              - kms:Delete*
+              - kms:TagResource
+              - kms:UntagResource
+              - kms:ScheduleKeyDeletion
+              - kms:CancelKeyDeletion
+            Resource: "*"
+          - Sid: Lambda crypto use
+            Effect: Allow
+            Principal: { AWS: !GetAtt FunctionRole.Arn }
+            Action: [kms:Encrypt, kms:Decrypt, kms:GenerateDataKey*, kms:DescribeKey]
+            Resource: "*"
+      Tags:
+        - Key: project
+          Value: artesuave-mcp
+
+  CredsKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/artesuave-mcp-creds
+      TargetKeyId: !Ref CredsKey
 
   FunctionRole:
     Type: AWS::IAM::Role
@@ -54,13 +107,15 @@ Resources:
               - Effect: Allow
                 Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:DeleteItem]
                 Resource: !GetAtt SessionTable.Arn
-              # only this project's SSM params (SecureString)
+              # only this project's SSM params (SecureString): read all, and
+              # write user creds during OAuth login
               - Effect: Allow
-                Action: [ssm:GetParameter]
+                Action: [ssm:GetParameter, ssm:PutParameter]
                 Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/artesuave-mcp/*
-              # decrypt SecureString with the account default SSM key
+              # encrypt/decrypt SecureStrings — only when SSM is the caller, which
+              # covers both the account default SSM key and our own CredsKey
               - Effect: Allow
-                Action: [kms:Decrypt]
+                Action: [kms:Encrypt, kms:Decrypt, kms:GenerateDataKey, kms:DescribeKey]
                 Resource: "*"
                 Condition:
                   StringEquals:
@@ -92,6 +147,9 @@ Resources:
           ARTESUAVE_LOGIN_PARAM: /artesuave-mcp/login
           ARTESUAVE_PASSWORD_PARAM: /artesuave-mcp/password
           ARTESUAVE_MCP_SECRET_PARAM: /artesuave-mcp/mcp-secret
+          # OAuth login flow (per-user "log in with your Arte Suave account")
+          ARTESUAVE_OAUTH: "1"
+          ARTESUAVE_CREDS_KMS_KEY_ID: !Ref CredsKey
       Tags:
         - Key: project
           Value: artesuave-mcp

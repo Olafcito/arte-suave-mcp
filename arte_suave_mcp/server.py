@@ -8,9 +8,11 @@ ARTESUAVE_MCP_SECRET(_PARAM); if unset (local dev), auth is open.
 
 from __future__ import annotations
 
+import os
+
 from fastmcp import FastMCP
 
-from . import creds, service
+from . import creds, oauth, service
 from .creds import get_server_secret
 
 mcp = FastMCP("arte-suave")
@@ -67,17 +69,42 @@ def debug_fetch(target: str) -> dict:
     return service.debug_fetch(target)
 
 
-def _build_asgi():
-    """ASGI app with a per-user auth gate.
+def _base_url(headers: dict) -> str:
+    """Public origin of this request, from proxy headers (API Gateway/LWA)."""
+    override = os.environ.get("ARTESUAVE_PUBLIC_URL")
+    if override:
+        return override.rstrip("/")
+    proto = headers.get("x-forwarded-proto", "https").split(",")[0].strip()
+    host = headers.get("host", "")
+    return f"{proto}://{host}"
 
-    Each request's bearer token resolves to a user id (see creds.resolve_identity);
-    we stash it on a contextvar so the tools act as that user. If no secret is
-    configured at all (local dev), auth is open and everything runs as the
-    default user.
+
+def _resolve_user(presented: str, path: str, secret: str | None, oauth_on: bool):
+    """Map a request to a user id across all supported auth schemes."""
+    # OAuth access tokens are self-marked; route them straight to the token store.
+    if oauth_on and presented.startswith(oauth.ACCESS_PREFIX):
+        return oauth.resolve_access_token(presented)
+    user_id = creds.resolve_identity(presented)  # legacy secret + <id>.<secret>
+    if user_id is None and secret and f"/{secret}" in path:
+        return creds.DEFAULT_USER  # legacy path-secret fallback
+    return user_id
+
+
+def _build_asgi():
+    """ASGI app with a per-user auth gate and (optionally) an OAuth server.
+
+    Each request's token resolves to a user id — via the legacy shared secret, a
+    self-identifying ``<id>.<secret>`` token, or an OAuth access token — and we
+    stash it on a contextvar so the tools act as that user. When OAuth is enabled
+    the ``/authorize``, ``/token``, ``/register`` and discovery routes are served
+    here, and an unauthenticated MCP request gets a 401 pointing at the metadata
+    so the client can start the login flow. With neither a secret nor OAuth
+    configured (local dev) auth is open.
     """
     secret = get_server_secret()
+    oauth_on = oauth.enabled()
     app = mcp.http_app(path="/mcp")
-    if not secret:
+    if not secret and not oauth_on:
         return app
 
     from starlette.responses import JSONResponse
@@ -88,13 +115,19 @@ def _build_asgi():
             return
         headers = {k.decode(): v.decode() for k, v in scope.get("headers", [])}
         path = scope.get("path", "")
+
+        if oauth_on and oauth.is_oauth_path(path):
+            await oauth.handle(scope, receive, send, _base_url(headers))
+            return
+
         presented = headers.get("authorization", "").removeprefix("Bearer ").strip()
-        user_id = creds.resolve_identity(presented)
-        # legacy path-secret fallback -> default user
-        if user_id is None and f"/{secret}" in path:
-            user_id = creds.DEFAULT_USER
+        user_id = _resolve_user(presented, path, secret, oauth_on)
         if user_id is None:
-            resp = JSONResponse({"error": "unauthorized"}, status_code=401)
+            extra = {}
+            if oauth_on:
+                meta = oauth.protected_resource_metadata_url(_base_url(headers))
+                extra["WWW-Authenticate"] = f'Bearer resource_metadata="{meta}"'
+            resp = JSONResponse({"error": "unauthorized"}, status_code=401, headers=extra)
             await resp(scope, receive, send)
             return
         token = service.set_current_user(user_id)
@@ -110,8 +143,6 @@ app = _build_asgi()
 
 
 def main() -> None:
-    import os
-
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "8080")))

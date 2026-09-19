@@ -76,67 +76,89 @@ fully separate from any other project in the account.
 ## Users & credentials
 
 The server is **multi-user**: each person uses their own Arte Suave account.
+There are two ways to connect — the login flow is the one to use.
 
-- A user's **bearer token** is self-identifying: `<userid>.<secret>` (e.g.
-  `anders.3f9a…`). The server splits off `<userid>`, loads that user's stored
-  secret, and constant-time compares it — so it never scans all users and only
-  ever logs the id, never the secret.
-- Each user's gym login lives in SSM SecureStrings under
-  `/artesuave-mcp/users/<userid>/{login,password,token}`, and each gets an
-  isolated portal session (`session#<userid>` in DynamoDB). No data crosses
-  between users.
-- The original single secret (`/artesuave-mcp/mcp-secret`, from `put-secrets.sh`)
-  still works and maps to a default account, so an existing connector keeps
-  running unchanged.
+### Log in with your Arte Suave account (recommended)
 
-**Add a user** (yourself or a friend) — run in a real terminal (it prompts for
-the gym password, which is never echoed or logged):
+The server is its own **OAuth 2.1 provider** (the MCP Authorization spec that
+Claude speaks). When someone adds the connector, Claude sends them to a login
+page hosted by the server; they enter their **own** Arte Suave email/password,
+and Claude silently receives a token. No token to copy, no onboarding step, and
+whenever a token expires they just log in again.
+
+- The gym portal is *not* an OAuth provider, so we can't delegate to it — the
+  login page collects the credentials, verifies them against the portal, and
+  stores them so the server can silently re-login when the portal's short-lived
+  cookie expires (a reused cookie alone would decay).
+- Credentials are stored as SSM SecureStrings encrypted under a **dedicated KMS
+  key whose policy grants decrypt only to the Lambda role** — not even the AWS
+  account admin can read them from the console. (Not zero-knowledge: the function
+  must decrypt them at login time; see `docs/INFRA.md`.)
+- Each user gets an isolated portal session (`session#<userid>` in DynamoDB) and
+  a user id derived from a one-way hash of their email — the email never appears
+  in a parameter name. No data crosses between users.
+- OAuth codes/tokens live in DynamoDB under `oauth:*` keys and auto-expire (TTL).
+
+Nothing to run — it works the moment the connector is added (see below).
+
+### Manual token (advanced / headless)
+
+For a scripted client that can't do a browser login, you can still mint a static
+bearer token. Run in a real terminal (it prompts for the gym password, never
+echoed or logged):
 
 ```bash
 bash infra/add-user.sh anders            # prompts for login + password
 bash infra/add-user.sh anders a@ex.com   # or pass the email
-# → prints the bearer token:  anders.<secret>   (hand it to that user)
+# → prints the bearer token:  anders.<secret>   (used as Authorization: Bearer)
 ```
+
+The legacy single secret (`/artesuave-mcp/mcp-secret`, from `put-secrets.sh`)
+also still works and maps to a default account, so an existing connector keeps
+running unchanged.
 
 ## Connect Claude (custom connector)
 
 Endpoint (same for everyone): the `/mcp` URL from the deploy output, e.g.
-`https://e7rfsehko9.execute-api.eu-north-1.amazonaws.com/mcp`. Auth is a static
-**`Authorization: Bearer <token>`** header — no OAuth. Use your `<userid>.<secret>`
-token (or the legacy `MCP_SECRET`). All three clients support this:
+`https://e7rfsehko9.execute-api.eu-north-1.amazonaws.com/mcp`.
 
-**Claude Code (CLI)**
-```bash
-claude mcp add --transport http --scope user arte-suave \
-  https://e7rfsehko9.execute-api.eu-north-1.amazonaws.com/mcp \
-  --header "Authorization: Bearer <YOUR_TOKEN>"
-claude mcp list            # verify; or /mcp inside a session
-claude mcp remove arte-suave
-```
+**With login (recommended)** — just add the connector by URL; Claude discovers
+the OAuth flow and shows the Arte Suave login page. No headers, no token.
 
-**Claude Desktop** — edit `claude_desktop_config.json` (macOS:
-`~/Library/Application Support/Claude/`, Windows: `%APPDATA%\Claude\`), then fully
-quit and reopen:
-```json
-{
-  "mcpServers": {
-    "arte-suave": {
-      "url": "https://e7rfsehko9.execute-api.eu-north-1.amazonaws.com/mcp",
-      "headers": { "Authorization": "Bearer <YOUR_TOKEN>" }
+- **claude.ai (web)**: Settings → Connectors → **Add custom connector** → enter
+  the `/mcp` URL → **Connect**. The login page opens; sign in with your Arte
+  Suave account.
+- **Claude Desktop**: Settings → Connectors → **Add custom connector** → the
+  `/mcp` URL. It opens the same login page on connect.
+- **Claude Code (CLI)**:
+  ```bash
+  claude mcp add --transport http --scope user arte-suave \
+    https://e7rfsehko9.execute-api.eu-north-1.amazonaws.com/mcp
+  # first use opens the browser login; then: claude mcp list  (or /mcp in a session)
+  ```
+
+**With a static token** (the manual-token/legacy path) — pass it as a header
+instead of logging in:
+
+- **Claude Code**: add `--header "Authorization: Bearer <TOKEN>"` to the command
+  above.
+- **Claude Desktop** — `claude_desktop_config.json` (macOS: `~/Library/Application
+  Support/Claude/`, Windows: `%APPDATA%\Claude\`), then quit and reopen:
+  ```json
+  {
+    "mcpServers": {
+      "arte-suave": {
+        "url": "https://e7rfsehko9.execute-api.eu-north-1.amazonaws.com/mcp",
+        "headers": { "Authorization": "Bearer <TOKEN>" }
+      }
     }
   }
-}
-```
+  ```
+- **claude.ai (web)**: Add custom connector → choose **No sign-in** → **Request
+  headers** → `authorization` = `Bearer <TOKEN>`.
 
-**claude.ai (web)** — Settings → Connectors → **Add custom connector**: enter the
-`/mcp` URL, choose **No sign-in**, open **Request headers**, add header
-`authorization` = `Bearer <YOUR_TOKEN>` (include the `Bearer ` prefix), mark
-required, save. (The Request-headers field is in beta; if you don't see it, use
-the CLI or Desktop instead.)
-
-The API is open at the AWS edge; the server enforces the token itself. Treat each
-token like a password; rotate a user's with `add-user.sh` (or the legacy secret
-with `put-secrets.sh`).
+The API is open at the AWS edge; the server enforces auth itself on every
+request. Treat every token like a password.
 
 ## Layout
 
@@ -148,7 +170,8 @@ arte_suave_mcp/
   client.py    httpx session client: WAF clearance, login, reuse, one-retry re-login
   parsers.py   selectolax parsers (isolated)
   service.py   tool logic (framework-agnostic)
-  server.py    FastMCP tools + ASGI app + per-user auth gate
+  server.py    FastMCP tools + ASGI app + per-user auth gate (secret / token / OAuth)
+  oauth.py     OAuth 2.1 server: discovery, DCR, login page, /authorize + /token (PKCE)
   creds.py / session_store.py   per-user SSM creds + identity; memory/file/DynamoDB session
 infra/         template.yaml (SAM/CFN), deploy.sh, put-secrets.sh, add-user.sh, run.sh
 scripts/       Playwright discovery harness (dev only)

@@ -82,6 +82,33 @@ This shape scales without new fixed cost:
   same ASGI app to App Runner — that's the point where the ≤$5/mo budget you
   mentioned kicks in. No rewrite; the app is a standard ASGI application.
 
+## Auth: login flow + credential encryption
+
+The endpoint is public at the AWS edge; the app authenticates every request. It
+accepts three token types: the legacy shared secret, a self-identifying
+`<userid>.<secret>` token, and **OAuth 2.1 access tokens** issued by the server's
+own login flow (`oauth.py`). Claude discovers the OAuth endpoints, registers
+itself (dynamic client registration), and sends the user to a login page; there's
+no OAuth provider on the gym side to delegate to, so the page collects the Arte
+Suave credentials, verifies them against the portal, and stores them.
+
+- **Credential encryption.** Per-user creds are SSM SecureStrings encrypted under
+  a dedicated customer-managed KMS key (`alias/artesuave-mcp-creds`). Its key
+  policy grants *cryptographic* use (encrypt/decrypt) **only to the Lambda
+  execution role**; the account root gets management actions but **not** decrypt.
+  So a SecureString value shows as ciphertext in the console/CLI even to an
+  admin. This is **not zero-knowledge**: the function must decrypt the password at
+  login time to talk to the portal (which needs the real password, not a token),
+  and the account owner could always re-grant themselves via a policy edit. Given
+  a portal that isn't an OAuth provider, that limit is unavoidable — the goal here
+  is "not casually visible", which this achieves.
+- **OAuth state** lives in the same DynamoDB table under `oauth:*` keys — clients
+  (persistent), auth codes (~5 min TTL), access tokens (~30 day TTL) and refresh
+  tokens (~180 day TTL). Tokens are stored hashed. DynamoDB TTL auto-expires them;
+  session items omit the `ttl` attribute and persist.
+- **Cost.** One customer-managed KMS key is ~$1/mo plus per-request charges — the
+  only line item that nudges this above $0. Still pennies overall.
+
 ## Redeploy / teardown
 
 - Deploy / update: `infra/deploy.sh` (builds Linux wheels with uv — no Docker).
