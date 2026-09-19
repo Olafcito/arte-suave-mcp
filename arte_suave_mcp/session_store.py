@@ -84,13 +84,19 @@ class DynamoBackend:
         self.table.delete_item(Key={"pk": self.key})
 
 
-def build_backend() -> SessionBackend:
-    """Pick a backend from env: DynamoDB in Lambda, file locally, else memory."""
+def build_backend(key: str = "session") -> SessionBackend:
+    """Pick a backend from env: DynamoDB in Lambda, file locally, else memory.
+
+    `key` namespaces the stored session so each user gets an isolated record.
+    """
     table = os.environ.get("ARTESUAVE_SESSION_TABLE")
     if table:
-        return DynamoBackend(table)
+        return DynamoBackend(table, key=key)
     path = os.environ.get("ARTESUAVE_SESSION_FILE")
     if path:
+        if key != "session":
+            p = Path(path)
+            path = str(p.with_name(f"{p.stem}.{key}{p.suffix}"))
         return FileBackend(path)
     return MemoryBackend()
 

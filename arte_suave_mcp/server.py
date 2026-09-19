@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from fastmcp import FastMCP
 
-from . import service
+from . import creds, service
 from .creds import get_server_secret
 
 mcp = FastMCP("arte-suave")
@@ -68,7 +68,13 @@ def debug_fetch(target: str) -> dict:
 
 
 def _build_asgi():
-    """ASGI app with a secret gate for the public Function URL."""
+    """ASGI app with a per-user auth gate.
+
+    Each request's bearer token resolves to a user id (see creds.resolve_identity);
+    we stash it on a contextvar so the tools act as that user. If no secret is
+    configured at all (local dev), auth is open and everything runs as the
+    default user.
+    """
     secret = get_server_secret()
     app = mcp.http_app(path="/mcp")
     if not secret:
@@ -82,13 +88,20 @@ def _build_asgi():
             return
         headers = {k.decode(): v.decode() for k, v in scope.get("headers", [])}
         path = scope.get("path", "")
-        auth = headers.get("authorization", "")
-        presented = auth.removeprefix("Bearer ").strip()
-        if presented == secret or f"/{secret}" in path:
-            await app(scope, receive, send)
+        presented = headers.get("authorization", "").removeprefix("Bearer ").strip()
+        user_id = creds.resolve_identity(presented)
+        # legacy path-secret fallback -> default user
+        if user_id is None and f"/{secret}" in path:
+            user_id = creds.DEFAULT_USER
+        if user_id is None:
+            resp = JSONResponse({"error": "unauthorized"}, status_code=401)
+            await resp(scope, receive, send)
             return
-        resp = JSONResponse({"error": "unauthorized"}, status_code=401)
-        await resp(scope, receive, send)
+        token = service.set_current_user(user_id)
+        try:
+            await app(scope, receive, send)
+        finally:
+            service.reset_current_user(token)
 
     return guard
 

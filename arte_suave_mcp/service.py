@@ -6,12 +6,12 @@ so failures are always structured and never opaque.
 
 from __future__ import annotations
 
+import contextvars
 import datetime as dt
 import time
 
-from . import config
+from . import config, creds
 from .client import AuthError, PortalClient, WAFError
-from .creds import get_credentials
 from .models import error, ok, parse_failed
 from .parsers import (
     ParseError,
@@ -20,16 +20,36 @@ from .parsers import (
     parse_bookings,
     parse_schedule,
 )
+from .session_store import SessionStore, build_backend
 
-_client: PortalClient | None = None
-_schedule_cache: dict[str, tuple[float, str]] = {}
+# The authenticated user for the current request. Set by the server's auth guard
+# before it dispatches, so tool signatures the model sees stay identity-free.
+_current_user: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "current_user", default=creds.DEFAULT_USER
+)
+
+_clients: dict[str, PortalClient] = {}
+# keyed by (user_id, day) so one user's booking state never bleeds into another's
+_schedule_cache: dict[tuple[str, str], tuple[float, str]] = {}
+
+
+def set_current_user(user_id: str) -> contextvars.Token:
+    return _current_user.set(user_id)
+
+
+def reset_current_user(token: contextvars.Token) -> None:
+    _current_user.reset(token)
 
 
 def get_client() -> PortalClient:
-    global _client
-    if _client is None:
-        _client = PortalClient(get_credentials)
-    return _client
+    user_id = _current_user.get()
+    client = _clients.get(user_id)
+    if client is None:
+        key = "session" if user_id == creds.DEFAULT_USER else f"session#{user_id}"
+        store = SessionStore(build_backend(key=key))
+        client = PortalClient(lambda u=user_id: creds.get_credentials(u), store)
+        _clients[user_id] = client
+    return client
 
 
 def _today() -> dt.date:
@@ -48,12 +68,13 @@ def _daterange(date_from: str | None, date_to: str | None) -> list[str]:
 
 def _fetch_schedule_day(day: str) -> str:
     now = time.monotonic()
-    cached = _schedule_cache.get(day)
+    ckey = (_current_user.get(), day)
+    cached = _schedule_cache.get(ckey)
     if cached and now - cached[0] < config.SCHEDULE_CACHE_TTL:
         return cached[1]
     url = f"{config.ACCOUNT}{config.Q_SCHEDULE}&{config.FIELD['start_date']}={day}"
     html = get_client().get_authed(url)
-    _schedule_cache[day] = (now, html)
+    _schedule_cache[ckey] = (now, html)
     return html
 
 
@@ -166,7 +187,7 @@ def _signup(work_schedule_id: str, action_value: str, step: str) -> dict:
             resp = client.post_authed(url, data)
         except (AuthError, WAFError) as e:
             return error(step, str(e))
-        _schedule_cache.pop(day, None)  # invalidate; spots changed
+        _schedule_cache.pop((_current_user.get(), day), None)  # invalidate; spots changed
         body = None
         try:
             body = resp.json()

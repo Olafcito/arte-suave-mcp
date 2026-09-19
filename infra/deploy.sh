@@ -75,7 +75,16 @@ if ! "${AWS[@]}" s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
 fi
 KEY="function-$(date +%s).zip"
 echo ">> uploading s3://$BUCKET/$KEY"
-"${AWS[@]}" s3 cp "$ZIP" "s3://$BUCKET/$KEY" >/dev/null
+# native aws.exe needs the Windows path, not the MSYS path, or it silently
+# uploads the wrong/short file (deps never make it to S3 -> Lambda can't import).
+"${AWS[@]}" s3 cp "$ZIP_W" "s3://$BUCKET/$KEY" >/dev/null
+# fail loudly if the uploaded object isn't the full package
+UP_SIZE=$("${AWS[@]}" s3api head-object --bucket "$BUCKET" --key "$KEY" --query ContentLength --output text)
+if [ "$UP_SIZE" -lt 1000000 ]; then
+  echo "ERROR: uploaded object is only ${UP_SIZE} bytes — deps missing from zip" >&2
+  exit 1
+fi
+echo "   uploaded ${UP_SIZE} bytes"
 
 echo ">> deploying stack $STACK"
 "${AWS[@]}" cloudformation deploy \

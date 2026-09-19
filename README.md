@@ -73,19 +73,70 @@ bash infra/deploy.sh          # builds, uploads, deploys the CloudFormation stac
 Everything is namespaced `artesuave-mcp-*` and tagged `project=artesuave-mcp`,
 fully separate from any other project in the account.
 
+## Users & credentials
+
+The server is **multi-user**: each person uses their own Arte Suave account.
+
+- A user's **bearer token** is self-identifying: `<userid>.<secret>` (e.g.
+  `anders.3f9a…`). The server splits off `<userid>`, loads that user's stored
+  secret, and constant-time compares it — so it never scans all users and only
+  ever logs the id, never the secret.
+- Each user's gym login lives in SSM SecureStrings under
+  `/artesuave-mcp/users/<userid>/{login,password,token}`, and each gets an
+  isolated portal session (`session#<userid>` in DynamoDB). No data crosses
+  between users.
+- The original single secret (`/artesuave-mcp/mcp-secret`, from `put-secrets.sh`)
+  still works and maps to a default account, so an existing connector keeps
+  running unchanged.
+
+**Add a user** (yourself or a friend) — run in a real terminal (it prompts for
+the gym password, which is never echoed or logged):
+
+```bash
+bash infra/add-user.sh anders            # prompts for login + password
+bash infra/add-user.sh anders a@ex.com   # or pass the email
+# → prints the bearer token:  anders.<secret>   (hand it to that user)
+```
+
 ## Connect Claude (custom connector)
 
-1. Get the endpoint (ends in `/mcp`) from the deploy output, and the
-   `MCP_SECRET` from `put-secrets.sh`.
-2. In Claude → **Settings → Connectors → Add custom connector**:
-   - **URL**: the `/mcp` endpoint.
-   - **Authentication**: bearer token — value = your `MCP_SECRET`. (The server
-     also accepts the secret as a trailing path segment if your client can't set
-     a header.)
-3. Save and enable. Claude will list the seven tools above.
+Endpoint (same for everyone): the `/mcp` URL from the deploy output, e.g.
+`https://e7rfsehko9.execute-api.eu-north-1.amazonaws.com/mcp`. Auth is a static
+**`Authorization: Bearer <token>`** header — no OAuth. Use your `<userid>.<secret>`
+token (or the legacy `MCP_SECRET`). All three clients support this:
 
-The API is public at the AWS edge; the server enforces the bearer secret itself,
-so keep the secret private and rotate it with `put-secrets.sh` if leaked.
+**Claude Code (CLI)**
+```bash
+claude mcp add --transport http --scope user arte-suave \
+  https://e7rfsehko9.execute-api.eu-north-1.amazonaws.com/mcp \
+  --header "Authorization: Bearer <YOUR_TOKEN>"
+claude mcp list            # verify; or /mcp inside a session
+claude mcp remove arte-suave
+```
+
+**Claude Desktop** — edit `claude_desktop_config.json` (macOS:
+`~/Library/Application Support/Claude/`, Windows: `%APPDATA%\Claude\`), then fully
+quit and reopen:
+```json
+{
+  "mcpServers": {
+    "arte-suave": {
+      "url": "https://e7rfsehko9.execute-api.eu-north-1.amazonaws.com/mcp",
+      "headers": { "Authorization": "Bearer <YOUR_TOKEN>" }
+    }
+  }
+}
+```
+
+**claude.ai (web)** — Settings → Connectors → **Add custom connector**: enter the
+`/mcp` URL, choose **No sign-in**, open **Request headers**, add header
+`authorization` = `Bearer <YOUR_TOKEN>` (include the `Bearer ` prefix), mark
+required, save. (The Request-headers field is in beta; if you don't see it, use
+the CLI or Desktop instead.)
+
+The API is open at the AWS edge; the server enforces the token itself. Treat each
+token like a password; rotate a user's with `add-user.sh` (or the legacy secret
+with `put-secrets.sh`).
 
 ## Layout
 
@@ -97,9 +148,9 @@ arte_suave_mcp/
   client.py    httpx session client: WAF clearance, login, reuse, one-retry re-login
   parsers.py   selectolax parsers (isolated)
   service.py   tool logic (framework-agnostic)
-  server.py    FastMCP tools + ASGI app + bearer gate
-  creds.py / session_store.py   SSM/env creds; memory/file/DynamoDB session
-infra/         template.yaml (SAM/CFN), deploy.sh, put-secrets.sh, run.sh
+  server.py    FastMCP tools + ASGI app + per-user auth gate
+  creds.py / session_store.py   per-user SSM creds + identity; memory/file/DynamoDB session
+infra/         template.yaml (SAM/CFN), deploy.sh, put-secrets.sh, add-user.sh, run.sh
 scripts/       Playwright discovery harness (dev only)
 tests/         contract tests + fixtures + opt-in live smoke
 ```
