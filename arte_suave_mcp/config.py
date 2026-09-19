@@ -56,6 +56,9 @@ SEL = {
     "spots_count": ".md-class-row__spots-count",
     "signup_form": "form.mu-signup-form",
     "main": ".mu-training__main",
+    # On the bookings page, each day's rows are preceded by this label
+    # ("lørdag 19.09.") — the only place the booking's date appears.
+    "day_label": ".md-class-list__day-label",
 }
 # Public weekly-schedule markup: day is an <h1> ("Monday 21 Sep 2026"), the mat/
 # location an <h5>, then a table of classes (Tid / Hold / Instruktører).

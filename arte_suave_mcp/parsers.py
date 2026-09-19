@@ -6,6 +6,7 @@ layer converts into a structured parse_failed result with a raw excerpt.
 
 from __future__ import annotations
 
+import datetime as dt
 import re
 
 from selectolax.parser import HTMLParser
@@ -193,13 +194,42 @@ def parse_public_week(html: str) -> dict[str, list[ClassInfo]]:
     return out
 
 
-def parse_bookings(html: str) -> list[Booking]:
+def _label_date(text: str, today: dt.date) -> str | None:
+    """'lørdag 19.09.' -> ISO date. The label has no year, so pick the calendar
+    year that puts the date nearest to `today` (handles the Dec/Jan boundary)."""
+    m = re.search(r"(\d{1,2})\.(\d{1,2})\.", text)
+    if not m:
+        return None
+    day, month = int(m.group(1)), int(m.group(2))
+    best: dt.date | None = None
+    for year in (today.year - 1, today.year, today.year + 1):
+        try:
+            cand = dt.date(year, month, day)
+        except ValueError:
+            continue  # e.g. 29.02. in a non-leap year
+        if best is None or abs((cand - today).days) < abs((best - today).days):
+            best = cand
+    return best.isoformat() if best else None
+
+
+def parse_bookings(html: str, today: dt.date | None = None) -> list[Booking]:
+    """Parse the bookings page. Rows are grouped under day labels
+    (``md-class-list__day-label``); we carry each label's date onto its rows so
+    every booking knows which day it is on."""
+    today = today or dt.date.today()
+    label_token = S["day_label"].lstrip(".")
+    row_token = S["row"].lstrip(".")
     tree = HTMLParser(html)
-    rows = tree.css(S["row"])
+    root = tree.body or tree.root
     out: list[Booking] = []
-    for r in rows:
-        ci = _parse_row(r, None)
-        out.append(Booking(**ci.model_dump(), booking_id=ci.class_id))
+    current_date: str | None = None
+    for node in root.traverse(include_text=False):
+        tokens = (node.attributes.get("class") or "").split()
+        if label_token in tokens:
+            current_date = _label_date(node.text(), today)
+        elif row_token in tokens:
+            ci = _parse_row(node, current_date)
+            out.append(Booking(**ci.model_dump(), booking_id=ci.class_id))
     # An empty bookings list is valid; only fail if the page didn't render at all.
     if not out and "member-training" not in html and "mu-" not in html:
         raise ParseError("bookings", "the bookings UI region")

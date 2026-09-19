@@ -185,7 +185,7 @@ def get_my_bookings() -> dict:
     except (AuthError, WAFError) as e:
         return error("fetch_bookings", str(e))
     try:
-        bookings = parse_bookings(html)
+        bookings = parse_bookings(html, today=_today())
     except ParseError as e:
         return parse_failed(e.step, e.expected, html, detail=e.detail)
     return ok([b.model_dump() for b in bookings])

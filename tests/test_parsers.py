@@ -1,3 +1,4 @@
+import datetime as dt
 from pathlib import Path
 
 import pytest
@@ -50,12 +51,26 @@ def test_discipline_group_tagging():
 
 
 def test_parse_bookings():
-    bookings = parse_bookings(_read("bookings.html"))
+    bookings = parse_bookings(_read("bookings.html"), today=dt.date(2026, 9, 19))
     assert len(bookings) == 1
     b = bookings[0]
     assert b.name == "Thaiboksning"
     assert b.trainer == "Michael Marlow"
     assert b.booking_id == b.class_id
+    # the booking's date is now populated from the day label ("lørdag 19.09.")
+    assert b.date == "2026-09-19"
+    assert b.start == "2026-09-19 10:00"
+    assert b.end == "2026-09-19 11:00"
+
+
+def test_label_date_year_inference():
+    from arte_suave_mcp.parsers import _label_date
+
+    # nearest-year: a "02.01." label seen in late Dec belongs to next year
+    assert _label_date("torsdag 02.01.", dt.date(2026, 12, 30)) == "2027-01-02"
+    # a "30.12." label seen in early Jan belongs to last year
+    assert _label_date("mandag 30.12.", dt.date(2026, 1, 3)) == "2025-12-30"
+    assert _label_date("no date here", dt.date(2026, 1, 1)) is None
 
 
 def test_parse_attendance():
