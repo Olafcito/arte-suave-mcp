@@ -81,7 +81,7 @@ Pages without that region behave as before.
 
 ## F2 — Upload a training picture (experiment)
 
-- **Status:** in progress
+- **Status:** shipped (PR #4) — link route verified live 2026-09-20; client test matrix still to run
 - **Source:** owner request (2026-09-20): test whether Claude clients can get a
   user's photo out to an MCP tool.
 
