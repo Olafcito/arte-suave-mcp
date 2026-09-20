@@ -76,3 +76,59 @@ Pages without that region behave as before.
   from the portal.
 - Empty day inside the current week stays empty, no note.
 - `debug_fetch` excerpt contains the class region of a long page.
+
+---
+
+## F2 — Upload a training picture (experiment)
+
+- **Status:** in progress
+- **Source:** owner request (2026-09-20): test whether Claude clients can get a
+  user's photo out to an MCP tool.
+
+### Background
+
+MCP has no file-transfer primitive yet (SEP-2631 proposes one; no host ships
+it). What exists today:
+
+| Route | How | Reality |
+|---|---|---|
+| Inline base64 argument | model types the bytes into the tool call | The model sees an attached photo as pixels, not bytes, so in claude.ai / mobile it can only invent base64. Works only when the client has the real file (a code sandbox, Claude Code) and the file is small — every byte is an output token. |
+| Upload link ("ticket") | tool returns a short-lived URL; bytes travel over plain HTTPS outside MCP | Works on every client incl. mobile: tap link, pick photo. The pattern the MCP draft spec is converging on. |
+| Sandbox push | a client code sandbox POSTs the file to the ticket's presigned target | No tokens spent on bytes; depends on the sandbox's network egress allowlist. |
+| Host file params | ChatGPT Apps SDK can pass an uploaded file as a download URL | ChatGPT-only; not built here. |
+
+### Behaviour
+
+- `upload_training_pic(image_base64?, note?)`
+  - With `image_base64` (raw or `data:` URI): strictly decode, identify the
+    format from magic bytes (JPEG/PNG/WebP/GIF/HEIC), cap at 3 MiB, store.
+    Invented or truncated base64 fails with a plain message telling the
+    assistant to use the link instead — that failure is itself the test result.
+  - Without it: returns `upload_url`, valid 15 minutes, for the user to open.
+    The page is a single "choose photo" form that posts straight to S3
+    (presigned POST, ≤ 15 MiB, `image/*` only) and redirects back to a
+    confirmation. `GET <upload_url>?format=json` returns the same presigned POST
+    for a code sandbox to use.
+- `get_training_pics()` — the caller's pictures, newest first: `uploaded_at`,
+  `size`, `type`, `note`, and a 1-hour `view_url`.
+- Pictures are private per user: S3 key `pics/<user_id>/<ts>-<id>`, bucket
+  blocks all public access, access only through presigned URLs.
+- The upload ticket is the only credential on `/upload/<token>`: 32 random
+  bytes, stored in the sessions table with a `ttl`, bound to one user and one
+  object key. The destination never comes from tool arguments.
+- Local dev / tests (no bucket configured): inline uploads are kept in memory;
+  the link route reports that uploads aren't configured.
+
+### Infra
+
+`PicsBucket` (private, SSE, retained on stack delete), `ARTESUAVE_PICS_BUCKET`
+env var, Lambda role gets Put/Get on `pics/*` and ListBucket on that prefix.
+
+### Test matrix (manual, after deploy)
+
+1. claude.ai web, photo attached, "upload this" → expect the link route (or a
+   rejected invented base64).
+2. Claude mobile, same.
+3. claude.ai with code execution on → sandbox push via `?format=json`, or real
+   base64 of a small file.
+4. Claude Code with a local file → real base64 (small) works.

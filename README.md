@@ -14,6 +14,9 @@ classes. Runs as a single AWS Lambda. Not affiliated with the gym.
   breakdown.
 - `book_class(class_id)` / `cancel_booking(booking_id)` — write to your account;
   each confirms by reading bookings back.
+- `upload_training_pic(image_base64?, note?)` — stores a small picture passed
+  as real base64, or returns a 15-minute upload link for the user to open.
+  `get_training_pics()` lists them. An experiment; see `features.md` F2.
 - `submit_feedback(message, context?)` — leaves a note for the owner.
 - `health_check()` — login + parser checks.
 - `debug_fetch(target)` — sanitized raw HTML for when the site changes.
