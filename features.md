@@ -10,7 +10,7 @@ Status: `planned` → `in progress` → `shipped (PR #n)`.
 
 ## F1 — Release detection from the portal, not the calendar
 
-- **Status:** in progress
+- **Status:** shipped (PR #3)
 - **Source:** `feedback#u5272fd209b89cd5d#1789892089` (2026-09-20)
 
 ### Problem
