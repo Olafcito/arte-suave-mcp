@@ -26,10 +26,11 @@ def get_schedule(
 ) -> dict:
     """Get Arte Suave classes. `discipline` matches loosely (e.g. "kickboxing",
     "muay thai", "K1" all resolve to thai boxing) and the gym's original class
-    name is always returned. Dates are YYYY-MM-DD; omit for today. Released
-    (this-week) classes carry class_id, spots, `bookable` and `signed_up`
-    (already booked); days beyond that aren't open for booking yet and the
-    response's `note` says so, including when the next batch opens."""
+    name is always returned. Dates are YYYY-MM-DD; omit for today. Classes the
+    gym has released carry class_id, spots, `bookable` and `signed_up` (already
+    booked) — book those with book_class. Classes without those fields aren't
+    open for booking yet; the response's `note` says from which date, and when
+    the next batch is expected to open."""
     return service.get_schedule(discipline, date_from, date_to)
 
 
@@ -76,7 +77,8 @@ def health_check() -> dict:
 @mcp.tool
 def debug_fetch(target: str) -> dict:
     """Return sanitized raw HTML for a target ("schedule", "my_bookings",
-    "history", "membership") so the assistant can adapt if the site changed."""
+    "history", "membership") so the assistant can adapt if the site changed.
+    The excerpt starts at the page's class list (`raw_offset` chars in)."""
     return service.debug_fetch(target)
 
 

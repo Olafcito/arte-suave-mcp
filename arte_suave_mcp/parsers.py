@@ -19,6 +19,8 @@ F = config.FIELD
 
 
 class ParseError(Exception):
+    html = ""  # the page that failed to parse, when the caller attaches it
+
     def __init__(self, step: str, expected: str, detail: str | None = None):
         self.step = step
         self.expected = expected

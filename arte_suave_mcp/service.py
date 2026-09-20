@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextvars
 import datetime as dt
+import re
 import time
 
 from . import config, creds, feedback
@@ -81,13 +82,48 @@ def _fetch_schedule_day(day: str) -> str:
     return html
 
 
-def _use_portal(day: dt.date) -> bool:
-    """True for days the member portal actually serves with live data: today
-    through the end of the current week. Past days (even this week) and future
-    weeks come from the public plan instead."""
+def _portal_day(day: str) -> list[dict]:
+    """Live class rows the member portal serves for one day. Empty for a day
+    with no classes and for days the gym hasn't released yet."""
+    html = _fetch_schedule_day(day)
+    try:
+        rows = parse_schedule(html, date=day)
+    except ParseError as e:
+        e.html = html  # lets get_schedule return an excerpt of the broken page
+        raise
+    return [c.model_dump() for c in rows]
+
+
+def _split_sources(days: list[str]) -> tuple[list[dict], list[str]]:
+    """Return (live portal rows, days to serve from the public plan).
+
+    Past days always come from the plan. Today through this week's Sunday is
+    always the portal. A future week is released when the portal actually shows
+    classes for it — the site decides, not the calendar. Releases are
+    sequential, so weeks after the first unreleased one aren't probed."""
     today = _today()
-    week_end = today + dt.timedelta(days=6 - today.weekday())  # Sunday of this week
-    return today <= day <= week_end
+    this_monday = _monday_of(today)
+    live: list[dict] = []
+    plan_days: list[str] = []
+    by_week: dict[dt.date, list[str]] = {}
+    for d in days:
+        by_week.setdefault(_monday_of(dt.date.fromisoformat(d)), []).append(d)
+    unreleased = False
+    for monday in sorted(by_week):
+        upcoming = [d for d in by_week[monday] if d >= today.isoformat()]
+        plan_days += [d for d in by_week[monday] if d not in upcoming]
+        if not upcoming:
+            continue
+        if unreleased:
+            plan_days += upcoming
+            continue
+        rows = [c for d in upcoming for c in _portal_day(d)]
+        if rows or monday == this_monday:
+            live += rows
+        else:
+            unreleased = True
+            plan_days += upcoming
+    return live, sorted(plan_days)
 
 
 def _monday_of(day: dt.date) -> dt.date:
@@ -147,11 +183,15 @@ def _schedule_notes(plan_days: list[str]) -> str | None:
     future = sorted(d for d in plan_days if d > today)
     if future:
         release = _monday_of(dt.date.fromisoformat(future[0])) - dt.timedelta(days=1)
-        notes.append(
-            f"Classes from {future[0]} onward have not been released for booking "
-            f"yet; the next batch is expected to open Sunday "
-            f"{release.strftime('%d-%m-%Y')}."
-        )
+        note = f"Classes from {future[0]} onward have not been released for booking yet"
+        if release > _today():
+            note += (
+                "; the next batch is expected to open Sunday "
+                f"{release.strftime('%d-%m-%Y')}"
+            )
+        elif release == _today():
+            note += "; they are expected to open later today"
+        notes.append(note + ".")
     return " ".join(notes) or None
 
 
@@ -170,22 +210,12 @@ def get_schedule(
             known_groups=list(config.DISCIPLINE_ALIASES),
         )
     days = _daterange(date_from, date_to)
-    # Split by source: the portal has live data only for today..end-of-week;
-    # everything else (past days, future weeks) comes from the public plan.
-    portal_days = [d for d in days if _use_portal(dt.date.fromisoformat(d))]
-    plan_days = [d for d in days if d not in portal_days]
-
-    classes: list[dict] = []
-    for day in portal_days:
-        try:
-            html = _fetch_schedule_day(day)
-        except (AuthError, WAFError) as e:
-            return error("fetch_schedule", str(e))
-        try:
-            rows = parse_schedule(html, date=day)
-        except ParseError as e:
-            return parse_failed(e.step, e.expected, html, detail=e.detail)
-        classes.extend(c.model_dump() for c in rows)
+    try:
+        classes, plan_days = _split_sources(days)
+    except (AuthError, WAFError) as e:
+        return error("fetch_schedule", str(e))
+    except ParseError as e:
+        return parse_failed(e.step, e.expected, e.html, detail=e.detail)
 
     if classes:
         # Cross-check bookings so each live row says signed_up directly and the
@@ -368,10 +398,18 @@ def debug_fetch(target: str) -> dict:
         html = get_client().get_authed(url)
     except (AuthError, WAFError) as e:
         return error("debug_fetch", str(e))
+    clean = sanitize_html(html)
+    # Start at the training UI when the page has one; the head/nav alone would
+    # otherwise fill the whole excerpt.
+    main = re.search(
+        r'<[^<>]*class="[^"]*' + re.escape(config.SEL["main"].lstrip(".")), clean
+    )
+    offset = main.start() if main else 0
     return ok(
         {"target": target, "url": url, "length": len(html)},
-        raw_excerpt=sanitize_html(html)[: config.RAW_EXCERPT_MAX],
-        raw_truncated=len(html) > config.RAW_EXCERPT_MAX,
+        raw_excerpt=clean[offset : offset + config.RAW_EXCERPT_MAX],
+        raw_offset=offset,
+        raw_truncated=len(clean) - offset > config.RAW_EXCERPT_MAX,
     )
 
 

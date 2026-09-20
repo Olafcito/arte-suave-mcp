@@ -7,7 +7,7 @@ classes. Runs as a single AWS Lambda. Not affiliated with the gym.
 ## Tools
 
 - `get_schedule(discipline?, date_from?, date_to?)` — classes with trainer,
-  time, location and spots. This week's upcoming days are live and bookable;
+  time, location and spots. Days the gym has released are live and bookable;
   other days come from the gym's public weekly plan.
 - `get_my_bookings()` — current bookings.
 - `get_history(date_from?, date_to?)` — attendance counts, hours, per-discipline
