@@ -11,7 +11,7 @@ import datetime as dt
 import re
 import time
 
-from . import config, creds, feedback
+from . import config, creds, feedback, pics
 from .client import AuthError, PortalClient, WAFError, get_public
 from .models import error, ok, parse_failed, sanitize_html
 from .parsers import (
@@ -381,6 +381,32 @@ def submit_feedback(message: str, context: str | None = None) -> dict:
     except Exception as e:  # storage should never crash the tool
         return error("submit_feedback", f"could not store feedback: {e}")
     return ok(rec, message="feedback recorded")
+
+
+def upload_training_pic(image_base64: str | None = None, note: str | None = None) -> dict:
+    """Store a training picture, or hand out an upload link when the caller
+    has no real bytes to send (spec: features.md F2)."""
+    user_id = _current_user.get()
+    try:
+        if image_base64 and image_base64.strip():
+            return ok(pics.store_inline(user_id, image_base64, note), message="picture stored")
+        token = pics.create_ticket(user_id, note)
+    except pics.PicError as e:
+        return error("upload_training_pic", str(e))
+    except Exception as e:  # storage should never crash the tool
+        return error("upload_training_pic", f"could not store picture: {e}")
+    return ok(
+        {"upload_url": pics.upload_url(token), "valid_minutes": pics.TICKET_TTL // 60},
+        message="Give the user this link to open and choose the photo; then call "
+        "get_training_pics to confirm it arrived.",
+    )
+
+
+def get_training_pics() -> dict:
+    try:
+        return ok(pics.list_pics(_current_user.get()))
+    except Exception as e:
+        return error("get_training_pics", f"could not list pictures: {e}")
 
 
 def debug_fetch(target: str) -> dict:

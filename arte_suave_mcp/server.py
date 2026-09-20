@@ -12,7 +12,7 @@ import os
 
 from fastmcp import FastMCP
 
-from . import creds, oauth, service
+from . import creds, oauth, pics, service
 from .creds import get_server_secret
 
 mcp = FastMCP("arte-suave")
@@ -66,6 +66,25 @@ def submit_feedback(message: str, context: str | None = None) -> dict:
     `message` is the feedback in the user's words; `context` optionally captures
     what prompted it (the question asked, the tool output they objected to)."""
     return service.submit_feedback(message, context)
+
+
+@mcp.tool
+def upload_training_pic(image_base64: str | None = None, note: str | None = None) -> dict:
+    """Save a training picture for the user. A photo attached in chat reaches
+    you as pixels, not bytes — never invent base64. Pass `image_base64` only if
+    you hold the file's real bytes (e.g. a small file in a code sandbox, max
+    3 MB). Otherwise call without it and give the user the returned
+    `upload_url` to open and pick the photo (valid 15 min). A code sandbox with
+    network access can instead GET `<upload_url>?format=json` for a presigned
+    POST and push the file itself. `note` is an optional caption."""
+    return service.upload_training_pic(image_base64, note)
+
+
+@mcp.tool
+def get_training_pics() -> dict:
+    """The user's uploaded training pictures, newest first, each with a
+    temporary `view_url`."""
+    return service.get_training_pics()
 
 
 @mcp.tool
@@ -133,6 +152,15 @@ def _build_asgi():
             await oauth.handle(scope, receive, send, _base_url(headers))
             return
 
+        if pics.is_upload_path(path):
+            # no bearer here: the short-lived ticket in the URL is the credential
+            base = pics.public_base.set(_base_url(headers))
+            try:
+                await pics.handle(scope, receive, send)
+            finally:
+                pics.public_base.reset(base)
+            return
+
         presented = headers.get("authorization", "").removeprefix("Bearer ").strip()
         user_id = _resolve_user(presented, path, secret, oauth_on)
         if user_id is None:
@@ -144,9 +172,11 @@ def _build_asgi():
             await resp(scope, receive, send)
             return
         token = service.set_current_user(user_id)
+        base = pics.public_base.set(_base_url(headers))
         try:
             await app(scope, receive, send)
         finally:
+            pics.public_base.reset(base)
             service.reset_current_user(token)
 
     return guard

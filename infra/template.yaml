@@ -38,6 +38,30 @@ Resources:
         - Key: project
           Value: artesuave-mcp
 
+  # Training pictures (features.md F2). Private: no public access, reached only
+  # through short-lived presigned URLs the Lambda signs. Retained on stack
+  # delete so a teardown never takes users' photos with it.
+  PicsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub artesuave-mcp-pics-${AWS::AccountId}-${AWS::Region}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: project
+          Value: artesuave-mcp
+
   # Dedicated key for user credentials. The key policy grants *cryptographic*
   # use (encrypt/decrypt) ONLY to the Lambda role — the account admin can manage
   # or delete the key but cannot decrypt the stored passwords via console/CLI, so
@@ -107,6 +131,16 @@ Resources:
               - Effect: Allow
                 Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:DeleteItem]
                 Resource: !GetAtt SessionTable.Arn
+              # training pictures: objects under pics/ only, and listing that prefix
+              - Effect: Allow
+                Action: [s3:PutObject, s3:GetObject]
+                Resource: !Sub ${PicsBucket.Arn}/pics/*
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt PicsBucket.Arn
+                Condition:
+                  StringLike:
+                    s3:prefix: pics/*
               # only this project's SSM params (SecureString): read all, and
               # write user creds during OAuth login
               - Effect: Allow
@@ -150,6 +184,7 @@ Resources:
           # OAuth login flow (per-user "log in with your Arte Suave account")
           ARTESUAVE_OAUTH: "1"
           ARTESUAVE_CREDS_KMS_KEY_ID: !Ref CredsKey
+          ARTESUAVE_PICS_BUCKET: !Ref PicsBucket
       Tags:
         - Key: project
           Value: artesuave-mcp
