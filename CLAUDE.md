@@ -9,3 +9,4 @@
 - Tool docstrings in `server.py` are what the client model reads; update them with any response-shape change.
 - Responses: no server plumbing, no null/false-by-default fields; per-row flags only where meaningful, one top-level `note` otherwise.
 - Windows Git Bash: backslashes in heredoc Python get collapsed — use the Edit tool or write scripts to a file. LF→CRLF warnings are harmless.
+- The GitHub deploy role (`artesuave-mcp-deploy`) is not defined in this repo; new resource types need its permissions widened by hand (e.g. `infra/deploy-role-pics-policy.json`, applied with `aws iam put-role-policy`).
