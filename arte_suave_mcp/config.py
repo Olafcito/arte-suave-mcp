@@ -12,8 +12,9 @@ PORTAL_ENTRY = f"{BASE}/a/artesuave/webshop"
 ACCOUNT = f"{BASE}/webshop/Account/index.php"
 
 # --- Public weekly schedule (artesuave.dk marketing site, no auth) -----------
-# The member portal only returns today + a short upcoming window (past days and
-# next week come back empty). The public WordPress schedule publishes every week,
+# The member portal only returns today + the weeks the gym has released (past
+# days and unreleased weeks come back empty; next week is released on Sunday).
+# The public WordPress schedule publishes every week,
 # past and future, keyed by that week's Monday. It carries no live spots/booking,
 # so classes from here are the *planned* schedule (subject to change).
 PUBLIC_BASE = "https://artesuave.dk"

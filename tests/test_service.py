@@ -11,22 +11,30 @@ def _read(name: str) -> str:
 
 
 # ---- source routing ---------------------------------------------------------
-def test_use_portal_window(monkeypatch):
-    # Wednesday 2026-09-23; this week's window is Wed..Sun.
-    monkeypatch.setattr(service, "_today", lambda: dt.date(2026, 9, 23))
-    assert service._use_portal(dt.date(2026, 9, 21)) is False  # Mon (past)
-    assert service._use_portal(dt.date(2026, 9, 23)) is True   # today
-    assert service._use_portal(dt.date(2026, 9, 27)) is True   # Sun (week end)
-    assert service._use_portal(dt.date(2026, 9, 28)) is False  # next Mon
+# What the portal serves for a day it has no classes for (unreleased or empty).
+EMPTY_DAY = '<div class="mu-training__main"><p class="mu-empty">Ingen hold denne dag</p></div>'
 
 
-def _stub_sources(monkeypatch, today):
+def _stub_sources(monkeypatch, today, released_until=None, empty_days=()):
+    """Portal serves classes through `released_until` (default: this week's
+    Sunday) and an empty day beyond it. Returns the list of days fetched."""
+    if released_until is None:
+        released_until = today + dt.timedelta(days=6 - today.weekday())
+    fetched: list[str] = []
+
+    def fetch_day(day):
+        fetched.append(day)
+        if day in empty_days or dt.date.fromisoformat(day) > released_until:
+            return EMPTY_DAY
+        return _read("schedule_day.html")
+
     monkeypatch.setattr(service, "_today", lambda: today)
     monkeypatch.setattr(service, "get_public", lambda url: _read("public_week.html"))
-    monkeypatch.setattr(service, "_fetch_schedule_day", lambda day: _read("schedule_day.html"))
+    monkeypatch.setattr(service, "_fetch_schedule_day", fetch_day)
     monkeypatch.setattr(service, "_booked_ids", lambda: set())
     service._public_week_cache.clear()
     service._schedule_cache.clear()
+    return fetched
 
 
 def test_past_days_come_from_public_plan(monkeypatch):
@@ -106,8 +114,46 @@ def test_unreleased_future_days_get_release_note(monkeypatch):
     _stub_sources(monkeypatch, dt.date(2026, 9, 23))
     res = service.get_schedule(date_from="2026-09-28", date_to="2026-09-29")
     assert res["status"] == "ok"
+    assert all("class_id" not in c for c in res["data"])
     assert "2026-09-28" in res["note"]  # first unreleased day named plainly
     assert "27-09-2026" in res["note"]  # expected release: the Sunday before that week
+
+
+# ---- feedback: release is what the portal shows, not what the calendar says --
+def test_released_next_week_is_live(monkeypatch):
+    # Sunday, and the gym has already released next week.
+    _stub_sources(monkeypatch, dt.date(2026, 9, 20), released_until=dt.date(2026, 9, 27))
+    res = service.get_schedule(date_from="2026-09-21", date_to="2026-09-27")
+    assert res["status"] == "ok"
+    assert res["data"]
+    assert all(c["class_id"] for c in res["data"])
+    assert all("bookable" in c and "signed_up" in c for c in res["data"])
+    assert "note" not in res
+
+
+def test_release_day_before_release_says_later_today(monkeypatch):
+    # Sunday morning: next week should open today but the portal is still empty.
+    _stub_sources(monkeypatch, dt.date(2026, 9, 20))
+    res = service.get_schedule(date_from="2026-09-21", date_to="2026-09-22")
+    assert "2026-09-21" in res["note"]
+    assert "later today" in res["note"]
+    assert "20-09-2026" not in res["note"]
+
+
+def test_weeks_after_an_unreleased_week_are_not_probed(monkeypatch):
+    fetched = _stub_sources(monkeypatch, dt.date(2026, 9, 23))
+    res = service.get_schedule(date_from="2026-09-28", date_to="2026-10-06")
+    assert res["status"] == "ok"
+    assert fetched, "the first future week is probed on the portal"
+    assert all(d < "2026-10-05" for d in fetched)
+
+
+def test_empty_day_this_week_stays_empty(monkeypatch):
+    _stub_sources(monkeypatch, dt.date(2026, 9, 23), empty_days=("2026-09-24",))
+    res = service.get_schedule(date_from="2026-09-24", date_to="2026-09-24")
+    assert res["status"] == "ok"
+    assert res["data"] == []
+    assert "note" not in res
 
 
 def test_discipline_filter_across_sources(monkeypatch):
@@ -175,6 +221,21 @@ def test_submit_feedback_stores(monkeypatch):
     assert len(feedback._memory) == 1
     assert feedback._memory[0]["message"] == "the schedule answer was wrong"
     assert feedback._memory[0]["context"] == "asked about next week"
+    assert feedback._memory[0]["handled"] is False  # new feedback starts open
+
+
+def test_debug_fetch_excerpt_starts_at_training_region(monkeypatch):
+    page = "<html><head>" + "x" * 20000 + '</head><div class="mu-training__main">ROWS</div>'
+
+    class FakeClient:
+        def get_authed(self, url):
+            return page
+
+    monkeypatch.setattr(service, "get_client", lambda: FakeClient())
+    res = service.debug_fetch("schedule")
+    assert res["status"] == "ok"
+    assert "ROWS" in res["raw_excerpt"]
+    assert res["raw_offset"] > 0
 
 
 def test_submit_feedback_requires_message():

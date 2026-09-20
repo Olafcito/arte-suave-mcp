@@ -9,20 +9,32 @@ description: Use when asked to check, read, triage, or fix Arte Suave MCP user f
 
 DynamoDB table `artesuave-mcp-sessions` (account 415407325274, `eu-north-1`),
 items whose `pk` starts with `feedback#` (`feedback#<user_id>#<unix_ts>`), with
-`message`, `context`, `user_id`, `created_at`.
+`message`, `context`, `user_id`, `created_at`, and `handled` (BOOL).
 
-Fetch:
+`handled` is the record of state: new feedback is stored with `handled: false`;
+it flips to `true` (plus `handled_at` and a one-line `resolution`) once it has
+been reviewed and either fixed or written up in `features.md`. Items are never
+deleted, so the table keeps the history.
+
+Fetch open feedback (items predating the flag have no `handled` and count as
+open):
 
 ```bash
 aws dynamodb scan --table-name artesuave-mcp-sessions \
-  --filter-expression "begins_with(pk, :p)" \
-  --expression-attribute-values '{":p":{"S":"feedback#"}}' \
+  --filter-expression "begins_with(pk, :p) AND (attribute_not_exists(handled) OR handled = :f)" \
+  --expression-attribute-values '{":p":{"S":"feedback#"},":f":{"BOOL":false}}' \
   --region eu-north-1 --profile nettoday-admin
 ```
 
+Drop the `handled` clause to see everything, including past resolutions.
+
 ## Process
 
-1. Read every open feedback item; `context` says what prompted it.
+1. Read every open feedback item; `context` says what prompted it. For each,
+   decide: fix it now (steps 2-6), or add it to `features.md` (repo root) as a
+   `planned` entry with the feedback `pk` as its source and a short spec. Either
+   outcome counts as handled (step 7). Anything bigger than a one-line fix gets
+   its spec in `features.md` first, then is executed from that spec.
 2. Locate the behavior: tool response shape lives in `arte_suave_mcp/service.py`
    (`_present_class`, `_schedule_notes`), HTML parsing in `parsers.py`,
    selectors/aliases in `config.py`, tool docstrings in `server.py`.
@@ -34,14 +46,21 @@ aws dynamodb scan --table-name artesuave-mcp-sessions \
    `health_check` tool if the change touched fetching or parsing.
 6. Update the tool docstring in `server.py` whenever a response shape changes —
    that text is what the client model sees.
-7. Delete the processed `feedback#...` items so the table only holds open
-   feedback:
+7. Mark each reviewed item handled once it is fixed or recorded in
+   `features.md`. `resolution` says which ("Fixed in PR #n", "features.md F3",
+   or why nothing changed). Never delete feedback items.
 
    ```bash
-   aws dynamodb delete-item --table-name artesuave-mcp-sessions \
+   aws dynamodb update-item --table-name artesuave-mcp-sessions \
      --key '{"pk":{"S":"feedback#<user_id>#<ts>"}}' \
+     --update-expression "SET handled = :t, handled_at = :now, resolution = :r" \
+     --condition-expression "attribute_exists(pk)" \
+     --expression-attribute-values '{":t":{"BOOL":true},":now":{"N":"<unix_ts_now>"},":r":{"S":"<resolution>"}}' \
      --region eu-north-1 --profile nettoday-admin
    ```
+
+   When a `features.md` entry ships, update its status there; the feedback item
+   stays as it is.
 
 ## Owner's interface principles
 

@@ -40,6 +40,8 @@ def store(user_id: str, message: str, context: str | None = None) -> dict:
         "user_id": user_id,
         "message": (message or "").strip()[:MAX_MESSAGE],
         "created_at": ts,
+        # Open until the owner marks it handled (see the handling-feedback skill).
+        "handled": False,
     }
     if context:
         item["context"] = context.strip()[:MAX_CONTEXT]
