@@ -10,8 +10,7 @@ MCP server for the [Arte Suave](https://artesuave.dk) gym portal in Copenhagen.
 
 I built it so I can manage my muay thai classes from my AI provider and sync
 them with my calendar, as part of a personal AI assistant that runs my
-training schedule. Ask about the week, book a class, cancel one, check how
-much you trained. It runs as a single AWS Lambda. Not affiliated with the gym.
+training schedule. Not affiliated with the gym.
 
 ```mermaid
 flowchart TB
