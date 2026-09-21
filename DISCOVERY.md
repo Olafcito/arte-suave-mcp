@@ -1,9 +1,11 @@
-# Arte Suave portal — discovery findings
+# Arte Suave portal — how it works
 
-Captured via Playwright against the live member portal (see `scripts/`), all
-secrets redacted on write. Raw dumps live in `discovery/raw/` (gitignored;
-contain personal data). Trimmed, scrubbed fixtures for tests live in
-`tests/fixtures/`.
+Reference for the portal mechanics the server depends on. Endpoints and
+selectors are mirrored in `arte_suave_mcp/config.py`; this file keeps the
+reasoning behind them. Originally captured with the Playwright harness in
+`scripts/` (raw dumps in gitignored `discovery/raw/`); when the site changes,
+the live `debug_fetch` tool is usually enough to re-check. Trimmed, scrubbed
+fixtures for tests live in `tests/fixtures/`.
 
 ## Platform
 
@@ -72,7 +74,12 @@ Base: `https://am.artesuave.dk/webshop/Account/index.php`
 | Membership     | `?Show=ShowProfile&action=MemberMembership`                  |
 
 Schedule is **one day per request** (a `StartDate` day nav). Next week's plan is
-released each Sunday. Category filter chips exist:
+released each Sunday; past days and unreleased weeks come back empty. For
+those, `get_schedule` falls back to the **public weekly plan** on the marketing
+site: `https://artesuave.dk/traeningstider/?StartDate=DD-MM-YYYY` (a Monday),
+no login, same simply.com WAF, an `<h1>` per day, `<h5>` per mat, then a
+`w3-table` of Tid / Hold / Instruktører. It carries no spots or booking
+forms, so those classes are planned only. Category filter chips exist:
 `BJJ GI, BJJ NO-GI, KICKBOXING, KIDS, MMA, OPEN GYM, OTHER, WOD, YOGA`
 (filter is server-side via `kategori[]`), but we filter client-side after
 parsing so we always keep the gym's original class name.
@@ -118,7 +125,7 @@ hours, latest training (date + class name), plus a per-discipline breakdown
 embedded in a Chart.js `kLabels`/`kData` array in inline JS. No per-session
 history table on this page.
 
-## Booking / cancelling (phase 2)
+## Booking / cancelling
 
 Same-origin form POST to `?Show=ShowProfile&action=SignUpforclasses&StartDate=…`
 with the row's hidden fields, flipping `ClassSignupAction`:
@@ -129,10 +136,9 @@ The `csrf` token is per-page-render and lives on each row's form, so book/cancel
 must first GET the day, read the fresh `csrf` for that `WorkScheduleID`, then
 POST. The JS `api()` helper posts these and reads `{ok, message}`.
 
-**Not exercised against the live site.** `signup` is confirmed from live HTML;
-`unregister` is inferred (mirrors `signup`; only appears in a JS comment because
-no cancelable future booking was open during discovery). Implemented from this
-pattern and gated — no real booking/cancel was performed.
+Both `signup` and `unregister` work live (`book_class` / `cancel_booking` are
+in daily use from claude.ai and ChatGPT); each confirms by reading the
+bookings page back. The opt-in live smoke test stays read-only.
 
 ## Auth/session lifetime
 

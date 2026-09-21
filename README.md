@@ -70,4 +70,4 @@ defaults to `eu-north-1` (`AWS_REGION`). Pushing to `main` deploys via GitHub
 Actions (OIDC).
 
 Portal endpoints and selectors live in `arte_suave_mcp/config.py`;
-[`DISCOVERY.md`](DISCOVERY.md) documents how the portal works.
+[`DISCOVERY.md`](DISCOVERY.md) explains how the portal works.
