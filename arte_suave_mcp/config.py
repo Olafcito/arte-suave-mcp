@@ -7,6 +7,8 @@ selector anywhere else.
 
 from __future__ import annotations
 
+import re
+
 BASE = "https://am.artesuave.dk"
 PORTAL_ENTRY = f"{BASE}/a/artesuave/webshop"
 ACCOUNT = f"{BASE}/webshop/Account/index.php"
@@ -149,11 +151,19 @@ def resolve_discipline(query: str | None) -> str | None:
     return None
 
 
+def _alias_in(alias: str, name: str) -> bool:
+    """Substring match, except short aliases ("gi", "k1", "wod") must be whole
+    words so they don't fire inside "Beginner", "big", etc."""
+    if len(alias) > 3:
+        return alias in name
+    return re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", name) is not None
+
+
 def primary_discipline(class_name: str) -> str | None:
     """The canonical group a class is tagged with (first alias match), if any."""
     name = class_name.lower()
     for group, aliases in DISCIPLINE_ALIASES.items():
-        if any(a in name for a in aliases):
+        if any(_alias_in(a, name) for a in aliases):
             return group
     return None
 
@@ -163,6 +173,6 @@ def class_matches_discipline(class_name: str, group: str) -> bool:
     name = class_name.lower()
     if group not in DISCIPLINE_ALIASES:
         return group.lower() in name
-    if any(a in name for a in DISCIPLINE_ALIASES[group]):
+    if any(_alias_in(a, name) for a in DISCIPLINE_ALIASES[group]):
         return True
     return any(all(s in name for s in subs) for subs in DISCIPLINE_ALSO.get(group, ()))

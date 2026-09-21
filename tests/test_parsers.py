@@ -178,3 +178,12 @@ def test_grappling_standup_is_not_thai_boxing():
 
 def test_boksehold_is_thai_boxing():
     assert config.primary_discipline("Motions boksehold") == "thai boxing"
+
+
+def test_short_alias_needs_word_boundary():
+    # "gi" must not match inside "Beginner"; "No-Gi" and "BJJ Gi" still do.
+    assert config.primary_discipline("Beginner Yoga") == "yoga"
+    assert config.class_matches_discipline("Beginner Yoga", "bjj") is False
+    assert config.primary_discipline("No-Gi Standup") == "bjj"
+    assert config.primary_discipline("BJJ Gi") == "bjj"
+    assert config.primary_discipline("Beginner K1") == "thai boxing"

@@ -168,3 +168,30 @@ upload link whenever the object is absent or has no usable `download_url`.
 - Confirm the pinned FastMCP exposes tool `_meta` (`@mcp.tool(meta=…)`).
 - Check `download_url` lifetime and any auth requirement in the Apps SDK
   reference; the Lambda already has the egress it needs.
+
+---
+
+## F4 — Show the requesting client on the OAuth login page
+
+- **Status:** planned
+- **Source:** security review of PR #6 (2026-09-21)
+
+### Problem
+
+`POST /register` accepts any client (dynamic registration, as the MCP spec
+expects) and the login page looks the same no matter who registered. Someone
+could register a client with their own `redirect_uri`, send a user a link to
+our real `/authorize`, and receive that user's MCP session. The gym password
+is never exposed, but schedule, bookings and pics would be.
+
+### Spec
+
+- `_login_page` shows the registered `client_name` and the host of the
+  `redirect_uri` ("Connecting **Claude** — you will be sent back to
+  claude.ai") above the form, HTML-escaped like the other fields.
+- Unknown or empty `client_name` renders as "an unnamed app" so the page
+  never looks like the default Claude flow for an unregistered name.
+- Test: the rendered page contains the escaped client name and redirect host;
+  a `<script>` in `client_name` comes out escaped.
+- Optional later: an allow-list of redirect hosts (claude.ai, chatgpt.com,
+  localhost) with an owner-approval step for anything else.

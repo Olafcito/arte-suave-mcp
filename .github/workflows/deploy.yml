@@ -39,7 +39,7 @@ jobs:
       - name: Configure AWS credentials (GitHub OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::415407325274:role/artesuave-mcp-deploy
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}  # repo variable: the deploy role ARN
           aws-region: eu-north-1
 
       # deploy.sh uses ambient credentials when AWS_ACCESS_KEY_ID is present

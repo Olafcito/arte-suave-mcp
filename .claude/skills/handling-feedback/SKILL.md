@@ -7,7 +7,7 @@ description: Use when asked to check, read, triage, or fix Arte Suave MCP user f
 
 ## Where feedback lives
 
-DynamoDB table `artesuave-mcp-sessions` (account 415407325274, `eu-north-1`),
+DynamoDB table `artesuave-mcp-sessions` (`eu-north-1`),
 items whose `pk` starts with `feedback#` (`feedback#<user_id>#<unix_ts>`), with
 `message`, `context`, `user_id`, `created_at`, and `handled` (BOOL).
 
