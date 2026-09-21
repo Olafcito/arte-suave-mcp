@@ -241,3 +241,22 @@ def test_debug_fetch_excerpt_starts_at_training_region(monkeypatch):
 def test_submit_feedback_requires_message():
     res = service.submit_feedback("   ")
     assert res["status"] == "error"
+
+
+def test_thai_filter_includes_cross_listed_mma_stand_up(monkeypatch):
+    _stub_sources(monkeypatch, dt.date(2026, 9, 23))
+    day = "2026-09-22"
+    rows = [
+        {"name": "MMA - Stand up", "discipline_group": "mma", "date": day,
+         "start": f"{day} 18:00", "source": "schedule"},
+        {"name": "No-Gi Standup", "discipline_group": "bjj", "date": day,
+         "start": f"{day} 10:00", "source": "schedule"},
+        {"name": "Thaiboksning", "discipline_group": "thai boxing", "date": day,
+         "start": f"{day} 17:00", "source": "schedule"},
+    ]
+    monkeypatch.setattr(service, "_public_days", lambda days: {d: list(rows) for d in days})
+    res = service.get_schedule(discipline="kickboxing", date_from=day, date_to=day)
+    assert res["status"] == "ok"
+    assert [c["name"] for c in res["data"]] == ["Thaiboksning", "MMA - Stand up"]
+    standup = res["data"][1]
+    assert standup["discipline_group"] == "mma"  # cross-listed, not re-tagged

@@ -132,3 +132,39 @@ env var, Lambda role gets Put/Get on `pics/*` and ListBucket on that prefix.
 3. claude.ai with code execution on → sandbox push via `?format=json`, or real
    base64 of a small file.
 4. Claude Code with a local file → real base64 (small) works.
+
+---
+
+## F3 — ChatGPT-attached photo straight into upload_training_pic
+
+- **Status:** planned — parked (owner, 2026-09-21: schedule/booking work first)
+- **Source:** `feedback#u5272fd209b89cd5d#1789918932` (2026-09-20)
+
+### Problem
+
+In ChatGPT the user attaches a photo and asks to send it to Arte Suave. ChatGPT
+holds the real file but cannot put its bytes into `image_base64` (it passed the
+sandbox path instead), and its runtime cannot POST to the upload link, so the
+only route left is the manual browser upload. F2's table already lists this as
+"ChatGPT-only; not built here".
+
+### Route
+
+ChatGPT's Apps SDK lets a tool declare a file parameter: the tool's `_meta`
+carries `openai/fileParams: ["image"]` and the `image` input is an object with
+`download_url` and `file_id` (optional `mime_type`, `file_name`). ChatGPT fills
+it from the attached file; the server fetches `download_url` itself and stores
+the bytes through the existing inline path (magic-byte sniff; the 3 MiB inline
+cap can rise to the link route's 15 MiB since the bytes no longer ride in the
+tool call). Claude clients ignore `_meta`, so nothing changes for them.
+
+Known state of that route (public issue tracker, Sept 2026): the file object is
+missing on roughly 10% of web calls, and the mobile app sends a bare
+`chat_upload://…` string instead of the object. The tool must fall back to the
+upload link whenever the object is absent or has no usable `download_url`.
+
+### Before building
+
+- Confirm the pinned FastMCP exposes tool `_meta` (`@mcp.tool(meta=…)`).
+- Check `download_url` lifetime and any auth requirement in the Apps SDK
+  reference; the Lambda already has the egress it needs.

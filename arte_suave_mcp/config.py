@@ -101,7 +101,7 @@ DISCIPLINE_ALIASES: dict[str, list[str]] = {
     "thai boxing": [
         "thai", "thaiboksning", "thaiboxing", "muay thai", "muaythai",
         "kickboxing", "kick boxing", "kickboksning", "k1", "k-1",
-        "motions boksning", "boksning", "boxing",
+        "motions boksning", "boksning", "bokse", "boxing",
     ],
     "bjj": ["bjj", "jiu", "jiu-jitsu", "jiujitsu", "gi", "no-gi", "nogi", "grappling"],
     "mma": ["mma", "mixed martial"],
@@ -110,6 +110,13 @@ DISCIPLINE_ALIASES: dict[str, list[str]] = {
     "yoga": ["yoga", "mobility", "stretch"],
     "open gym": ["open gym", "open mat", "open thaiboksning", "åben", "aben"],
     "kids": ["kids", "børn", "boern", "junior", "ungdom"],
+}
+# Classes that also belong to a second group while keeping their own tag. The
+# gym's "MMA - Stand up" is a striking session, so kickboxing / thai queries
+# should find it too. Each entry lists substrings that must ALL be in the name
+# ("mma" + "stand" — not "stand" alone, which would pull in "No-Gi Standup").
+DISCIPLINE_ALSO: dict[str, list[tuple[str, ...]]] = {
+    "thai boxing": [("mma", "stand")],
 }
 
 # --- HTTP politeness ---------------------------------------------------------
@@ -142,9 +149,20 @@ def resolve_discipline(query: str | None) -> str | None:
     return None
 
 
-def class_matches_discipline(class_name: str, group: str) -> bool:
-    """True if the gym's original class name belongs to the canonical group."""
+def primary_discipline(class_name: str) -> str | None:
+    """The canonical group a class is tagged with (first alias match), if any."""
     name = class_name.lower()
-    if group in DISCIPLINE_ALIASES:
-        return any(a in name for a in DISCIPLINE_ALIASES[group])
-    return group.lower() in name
+    for group, aliases in DISCIPLINE_ALIASES.items():
+        if any(a in name for a in aliases):
+            return group
+    return None
+
+
+def class_matches_discipline(class_name: str, group: str) -> bool:
+    """True if the class belongs to the group: by alias, or cross-listed."""
+    name = class_name.lower()
+    if group not in DISCIPLINE_ALIASES:
+        return group.lower() in name
+    if any(a in name for a in DISCIPLINE_ALIASES[group]):
+        return True
+    return any(all(s in name for s in subs) for subs in DISCIPLINE_ALSO.get(group, ()))
