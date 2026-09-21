@@ -7,7 +7,7 @@ description: Use when asked to check, read, triage, or fix Arte Suave MCP user f
 
 ## Where feedback lives
 
-DynamoDB table `artesuave-mcp-sessions` (account 415407325274, `eu-north-1`),
+DynamoDB table `artesuave-mcp-sessions` (`eu-north-1`),
 items whose `pk` starts with `feedback#` (`feedback#<user_id>#<unix_ts>`), with
 `message`, `context`, `user_id`, `created_at`, and `handled` (BOOL).
 
@@ -16,17 +16,13 @@ it flips to `true` (plus `handled_at` and a one-line `resolution`) once it has
 been reviewed and either fixed or written up in `features.md`. Items are never
 deleted, so the table keeps the history.
 
-Fetch open feedback (items predating the flag have no `handled` and count as
-open):
+Read it with the script next to this file (items predating the flag have no
+`handled` and count as open):
 
 ```bash
-aws dynamodb scan --table-name artesuave-mcp-sessions \
-  --filter-expression "begins_with(pk, :p) AND (attribute_not_exists(handled) OR handled = :f)" \
-  --expression-attribute-values '{":p":{"S":"feedback#"},":f":{"BOOL":false}}' \
-  --region eu-north-1 --profile nettoday-admin
+uv run python .claude/skills/handling-feedback/feedback.py list        # open items
+uv run python .claude/skills/handling-feedback/feedback.py list --all  # incl. resolutions
 ```
-
-Drop the `handled` clause to see everything, including past resolutions.
 
 ## Process
 
@@ -51,12 +47,7 @@ Drop the `handled` clause to see everything, including past resolutions.
    or why nothing changed). Never delete feedback items.
 
    ```bash
-   aws dynamodb update-item --table-name artesuave-mcp-sessions \
-     --key '{"pk":{"S":"feedback#<user_id>#<ts>"}}' \
-     --update-expression "SET handled = :t, handled_at = :now, resolution = :r" \
-     --condition-expression "attribute_exists(pk)" \
-     --expression-attribute-values '{":t":{"BOOL":true},":now":{"N":"<unix_ts_now>"},":r":{"S":"<resolution>"}}' \
-     --region eu-north-1 --profile nettoday-admin
+   uv run python .claude/skills/handling-feedback/feedback.py handle "feedback#<user_id>#<ts>" "Fixed in PR #n"
    ```
 
    When a `features.md` entry ships, update its status there; the feedback item

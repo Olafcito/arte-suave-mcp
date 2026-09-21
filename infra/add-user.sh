@@ -8,13 +8,15 @@
 # Claude connector. The gym password is read interactively and never echoed,
 # logged, or written to a file. Run this in a REAL terminal (it prompts).
 #
-# Env: AWS_PROFILE (default nettoday-admin), AWS_REGION (default eu-north-1).
+# Env: AWS_PROFILE (optional; else default credential chain),
+#      AWS_REGION (default eu-north-1).
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
 
-PROFILE="${AWS_PROFILE:-nettoday-admin}"
+PROFILE="${AWS_PROFILE:-}"
 REGION="${AWS_REGION:-eu-north-1}"
-AWS=(aws --profile "$PROFILE" --region "$REGION")
+AWS=(aws --region "$REGION")
+[ -n "$PROFILE" ] && AWS+=(--profile "$PROFILE")
 
 USER_ID="${1:-}"
 LOGIN="${2:-}"

@@ -161,3 +161,29 @@ def test_resolve_discipline_aliases():
     assert config.resolve_discipline("bjj") == "bjj"
     assert config.resolve_discipline("no-gi") == "bjj"
     assert config.resolve_discipline("nonsense-xyz") is None
+
+
+# feedback#u5272fd209b89cd5d#1789977538: the gym's striking MMA session should be
+# found by kickboxing / thai queries while keeping its own mma tag.
+def test_mma_stand_up_is_cross_listed_as_thai_boxing():
+    assert config.class_matches_discipline("MMA - Stand up", "thai boxing")
+    assert config.class_matches_discipline("MMA - Stand up", "mma")
+    assert config.primary_discipline("MMA - Stand up") == "mma"
+
+
+def test_grappling_standup_is_not_thai_boxing():
+    assert not config.class_matches_discipline("No-Gi Standup", "thai boxing")
+    assert config.primary_discipline("No-Gi Standup") == "bjj"
+
+
+def test_boksehold_is_thai_boxing():
+    assert config.primary_discipline("Motions boksehold") == "thai boxing"
+
+
+def test_short_alias_needs_word_boundary():
+    # "gi" must not match inside "Beginner"; "No-Gi" and "BJJ Gi" still do.
+    assert config.primary_discipline("Beginner Yoga") == "yoga"
+    assert config.class_matches_discipline("Beginner Yoga", "bjj") is False
+    assert config.primary_discipline("No-Gi Standup") == "bjj"
+    assert config.primary_discipline("BJJ Gi") == "bjj"
+    assert config.primary_discipline("Beginner K1") == "thai boxing"

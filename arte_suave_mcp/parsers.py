@@ -114,10 +114,9 @@ def parse_schedule(html: str, date: str | None = None) -> list[ClassInfo]:
 
 
 def _discipline_group(name: str) -> str | None:
-    for g in config.DISCIPLINE_ALIASES:
-        if config.class_matches_discipline(name, g):
-            return g
-    return None
+    # The tag is the primary group only; cross-listing (config.DISCIPLINE_ALSO)
+    # affects filtering, not what a class is called.
+    return config.primary_discipline(name)
 
 
 def _public_day_date(heading: str) -> str | None:

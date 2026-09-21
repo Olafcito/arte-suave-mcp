@@ -7,9 +7,11 @@ set -euo pipefail
 export MSYS_NO_PATHCONV=1
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROFILE="${AWS_PROFILE:-nettoday-admin}"
+# Env: AWS_PROFILE (optional; else default credential chain), AWS_REGION.
+PROFILE="${AWS_PROFILE:-}"
 REGION="${AWS_REGION:-eu-north-1}"
-AWS=(aws --profile "$PROFILE" --region "$REGION")
+AWS=(aws --region "$REGION")
+[ -n "$PROFILE" ] && AWS+=(--profile "$PROFILE")
 
 # shellcheck disable=SC1091
 set -a; source "$ROOT/.env"; set +a

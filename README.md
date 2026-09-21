@@ -64,9 +64,10 @@ bash infra/put-secrets.sh
 bash infra/deploy.sh
 ```
 
-Needs the AWS CLI and `uv` (default profile `nettoday-admin`, region
-`eu-north-1`; override with `AWS_PROFILE`/`AWS_REGION`). Pushing to `main`
-deploys via GitHub Actions (OIDC).
+Needs the AWS CLI and `uv`. Set `AWS_PROFILE` to an admin profile for the
+target account (otherwise the default credential chain is used); region
+defaults to `eu-north-1` (`AWS_REGION`). Pushing to `main` deploys via GitHub
+Actions (OIDC).
 
 Portal endpoints and selectors live in `arte_suave_mcp/config.py`;
 [`DISCOVERY.md`](DISCOVERY.md) documents how the portal works.

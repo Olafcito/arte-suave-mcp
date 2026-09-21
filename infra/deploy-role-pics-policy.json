@@ -18,7 +18,7 @@
         "s3:GetBucketTagging",
         "s3:PutBucketTagging"
       ],
-      "Resource": "arn:aws:s3:::artesuave-mcp-pics-415407325274-eu-north-1"
+      "Resource": "arn:aws:s3:::artesuave-mcp-pics-<ACCOUNT_ID>-eu-north-1"
     }
   ]
 }
