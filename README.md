@@ -14,12 +14,12 @@ training schedule. Ask about the week, book a class, cancel one, check how
 much you trained. It runs as a single AWS Lambda. Not affiliated with the gym.
 
 ```mermaid
-flowchart LR
+flowchart TB
     U(["🧑 You"]) -- "book me in on Tuesday" --> A["🤖 Claude / ChatGPT"]
-    A -- MCP over HTTPS --> L["λ arte-suave-mcp"]
-    L -- login, schedule, book --> P["🏋️ am.artesuave.dk"]
-    L -. planned weeks .-> W["🌐 artesuave.dk public plan"]
-    A -- class times --> C["📅 Your calendar"]
+    A -- "MCP over HTTPS" --> L["λ arte-suave-mcp"]
+    A -- "class times" --> C["📅 Your calendar"]
+    L -- "login, schedule, book" --> P["🏋️ am.artesuave.dk"]
+    L -. "planned weeks" .-> W["🌐 artesuave.dk public plan"]
 ```
 
 ## 🚀 Using it
@@ -80,15 +80,16 @@ those days cannot be booked yet.
 
 ## 🛠️ Developing
 
-### What you can work on
+### Prerequisites
 
-The parsing, tool logic and tests run fully offline against redacted HTML
-fixtures, so anyone can fix a parser, add an alias or reshape a response and
-verify it with the test suite. Running the server locally needs an Arte Suave
-membership, because it logs in with your own account. Deploying needs your own
-AWS account, and the GitHub deploy role is created by hand outside this repo,
-so the `infra/` folder is really the owner's deployment. Pull requests for the
-Python package are welcome. Infra changes are best raised as an issue first.
+| To | You need |
+|---|---|
+| Fix a parser, add an alias, reshape a response | `uv` and Python 3.12. The tests run offline against redacted HTML fixtures. |
+| Run the server locally | An Arte Suave membership. The server logs in with your own account. |
+| Deploy | Your own AWS account. The GitHub deploy role is created by hand outside this repo, so `infra/` is the owner's deployment. |
+
+Pull requests for the Python package are welcome. Infra changes are best
+raised as an issue first.
 
 ### Set up and test
 
@@ -107,7 +108,22 @@ ARTESUAVE_LIVE_SMOKE=1 uv run pytest tests/test_live_smoke.py -v   # read only, 
 
 `.env` holds real gym credentials and is gitignored.
 
-### 🗺️ How it is put together
+### 🧱 Tech stack
+
+| Layer | Choice | Why |
+|---|---|---|
+| MCP server | [FastMCP](https://gofastmcp.com) over streamable HTTP, served by uvicorn | Tools are plain Python functions with docstrings. The docstrings are what the client model reads. |
+| Portal access | httpx and selectolax | The portal is a server rendered PHP site behind a WAF proof of work, with no API. The server logs in, clears the challenge and parses HTML. |
+| Models | pydantic | Typed result shapes and HTML sanitizing. |
+| Compute | One AWS Lambda (Python 3.12) running uvicorn through the Lambda Web Adapter, behind an API Gateway HTTP API | No container and no always-on server. The deploy is a zip built by `uv`. |
+| State | DynamoDB, one table | Portal sessions, OAuth clients, codes and tokens with TTL, feedback and picture metadata. |
+| Credentials | SSM Parameter Store SecureStrings under a dedicated KMS key | Only the Lambda role can decrypt. The account admin can manage the key but cannot read gym passwords from the console. |
+| Auth | Built in OAuth 2.1 server with PKCE, plus bearer tokens for headless clients | The gym is not an identity provider, so this server is one. It verifies your login against the portal and mints its own tokens. |
+| Pictures | Private S3 bucket, presigned URLs | Photos never pass through the model. |
+| Infra and CI | CloudFormation with the SAM transform, GitHub Actions with OIDC | Merging to `main` runs tests and deploys. No long lived AWS keys in GitHub. |
+| Dev tools | `uv`, pytest, ruff, Playwright | Playwright is only used for portal discovery, see `DISCOVERY.md`. |
+
+### 🗺️ Architecture
 
 ```mermaid
 flowchart TB
@@ -117,7 +133,8 @@ flowchart TB
     P --> K["config.py<br/>URLs, selectors, aliases"]
     C --> K
     S --> O["oauth.py + creds.py<br/>who is calling"]
-    V --> D[("DynamoDB<br/>sessions, feedback")]
+    V --> D[("DynamoDB<br/>sessions, oauth, feedback")]
+    V --> B[("S3<br/>training pics")]
     O --> M[("SSM + KMS<br/>credentials")]
 ```
 
