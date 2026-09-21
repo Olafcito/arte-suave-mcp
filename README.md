@@ -15,11 +15,19 @@ training schedule. Not affiliated with the gym.
 ```mermaid
 flowchart TB
     U(["🧑 You"]) -- "book me in on Tuesday" --> A["🤖 Claude / ChatGPT"]
-    A -- "MCP over HTTPS" --> L["λ arte-suave-mcp"]
+    A -- "MCP" --> L["λ arte-suave-mcp"]
     A -- "class times" --> C["📅 Your calendar"]
-    L -- "login, schedule, book" --> P["🏋️ am.artesuave.dk"]
-    L -. "planned weeks" .-> W["🌐 artesuave.dk public plan"]
+    L -- "schedule, book, cancel" --> P["🏋️ Arte Suave portal"]
 ```
+
+## 🧱 Tech stack
+
+- **Python 3.12** and [FastMCP](https://gofastmcp.com), served by uvicorn over streamable HTTP.
+- **httpx** and **selectolax** to log in to the portal and parse its HTML. The portal has no API.
+- **AWS Lambda** behind an API Gateway HTTP API, running the ASGI app through the Lambda Web Adapter.
+- **DynamoDB** for sessions, OAuth tokens and feedback. **S3** for training pictures.
+- **SSM Parameter Store** and **KMS** for user credentials. Only the Lambda role can decrypt them.
+- **CloudFormation**, deployed by GitHub Actions on every merge to `main`.
 
 ## 🚀 Using it
 
@@ -77,50 +85,7 @@ those days cannot be booked yet.
 | `health_check()` | Login plus parser checks. |
 | `debug_fetch(target)` | Sanitized raw HTML for when the site changes. |
 
-## 🛠️ Developing
-
-### Prerequisites
-
-| To | You need |
-|---|---|
-| Fix a parser, add an alias, reshape a response | `uv` and Python 3.12. The tests run offline against redacted HTML fixtures. |
-| Run the server locally | An Arte Suave membership. The server logs in with your own account. |
-| Deploy | Your own AWS account. The GitHub deploy role is created by hand outside this repo, so `infra/` is the owner's deployment. |
-
-Pull requests for the Python package are welcome. Infra changes are best
-raised as an issue first.
-
-### Set up and test
-
-```bash
-uv sync
-uv run pytest
-uv run ruff check .
-```
-
-### Run it locally
-
-```bash
-LOGIN=... PASSWORD=... uv run arte-suave-mcp   # http://localhost:8080/mcp
-ARTESUAVE_LIVE_SMOKE=1 uv run pytest tests/test_live_smoke.py -v   # read only, needs .env
-```
-
-`.env` holds real gym credentials and is gitignored.
-
-### 🧱 Tech stack
-
-| Layer | Choice | Why |
-|---|---|---|
-| MCP server | [FastMCP](https://gofastmcp.com) over streamable HTTP, served by uvicorn | Tools are plain Python functions with docstrings. The docstrings are what the client model reads. |
-| Portal access | httpx and selectolax | The portal is a server rendered PHP site behind a WAF proof of work, with no API. The server logs in, clears the challenge and parses HTML. |
-| Models | pydantic | Typed result shapes and HTML sanitizing. |
-| Compute | One AWS Lambda (Python 3.12) running uvicorn through the Lambda Web Adapter, behind an API Gateway HTTP API | No container and no always-on server. The deploy is a zip built by `uv`. |
-| State | DynamoDB, one table | Portal sessions, OAuth clients, codes and tokens with TTL, feedback and picture metadata. |
-| Credentials | SSM Parameter Store SecureStrings under a dedicated KMS key | Only the Lambda role can decrypt. The account admin can manage the key but cannot read gym passwords from the console. |
-| Auth | Built in OAuth 2.1 server with PKCE, plus bearer tokens for headless clients | The gym is not an identity provider, so this server is one. It verifies your login against the portal and mints its own tokens. |
-| Pictures | Private S3 bucket, presigned URLs | Photos never pass through the model. |
-| Infra and CI | CloudFormation with the SAM transform, GitHub Actions with OIDC | Merging to `main` runs tests and deploys. No long lived AWS keys in GitHub. |
-| Dev tools | `uv`, pytest, ruff, Playwright | Playwright is only used for portal discovery, see `DISCOVERY.md`. |
+## 🛠️ Contributing
 
 ### 🗺️ Architecture
 
@@ -142,6 +107,37 @@ flowchart TB
 - `features.md` is the backlog. Anything bigger than a one line fix gets a spec
   there first.
 
+### Set up and test
+
+```bash
+uv sync
+uv run pytest
+uv run ruff check .
+```
+
+The tests run offline against redacted HTML fixtures, so this is all you need
+to fix a parser, add a discipline alias or reshape a response. Pull requests
+for the Python package are welcome.
+
+### Run it locally
+
+You need an Arte Suave membership, because the server logs in with your own
+account. You do not need any AWS resources. Without them sessions live in
+memory, OAuth is off and the local endpoint is open. Only the picture tools
+need the S3 bucket.
+
+```bash
+export LOGIN=you@example.com PASSWORD=...
+uv run arte-suave-mcp   # http://localhost:8080/mcp
+```
+
+The server reads `LOGIN` and `PASSWORD` from the environment. The live smoke
+test reads them from `.env` instead, which is gitignored:
+
+```bash
+ARTESUAVE_LIVE_SMOKE=1 uv run pytest tests/test_live_smoke.py -v   # read only
+```
+
 ### ☁️ Deploy (owner)
 
 ```bash
@@ -149,7 +145,10 @@ bash infra/put-secrets.sh
 bash infra/deploy.sh
 ```
 
-Needs the AWS CLI and `uv`. Set `AWS_PROFILE` to an admin profile for the
-target account, otherwise the default credential chain is used. Region
-defaults to `eu-north-1` (`AWS_REGION`). Merging to `main` deploys through
-GitHub Actions with OIDC.
+Needs the AWS CLI, `uv` and your own AWS account. The stack in `infra/`
+creates the DynamoDB table, S3 bucket, KMS key and Lambda. The GitHub deploy
+role is created by hand outside this repo. Set `AWS_PROFILE` to an admin
+profile for the target account, otherwise the default credential chain is
+used. Region defaults to `eu-north-1` (`AWS_REGION`). Merging to `main`
+deploys through GitHub Actions with OIDC. Infra changes are best raised as an
+issue first.
