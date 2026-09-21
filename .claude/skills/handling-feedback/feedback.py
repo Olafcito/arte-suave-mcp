@@ -5,7 +5,8 @@
 
 `list` prints open items (add --all for handled ones too), oldest first.
 `handle` sets handled/handled_at/resolution on one item; items are never deleted.
-AWS: profile from AWS_PROFILE, else nettoday-admin; region eu-north-1.
+AWS: credentials from AWS_PROFILE when set, else the default credential chain;
+region eu-north-1 (override with AWS_REGION).
 """
 
 from __future__ import annotations
@@ -20,8 +21,8 @@ import boto3
 from boto3.dynamodb.conditions import Attr
 
 TABLE = "artesuave-mcp-sessions"
-REGION = "eu-north-1"
-PROFILE = os.environ.get("AWS_PROFILE", "nettoday-admin")
+REGION = os.environ.get("AWS_REGION", "eu-north-1")
+PROFILE = os.environ.get("AWS_PROFILE") or None  # None -> default credential chain
 
 
 def _table():

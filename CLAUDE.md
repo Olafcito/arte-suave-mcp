@@ -2,7 +2,7 @@
 
 - `uv run pytest` / `uv run ruff check .` — must pass before a PR. The `VIRTUAL_ENV ... does not match` warning is harmless.
 - Live read-only check: `ARTESUAVE_LIVE_SMOKE=1 uv run pytest tests/test_live_smoke.py -v` (needs `.env`; use `load_dotenv(".env")` from a script file, not stdin).
-- AWS: profile `nettoday-admin`, region `eu-north-1`. Merging to `main` deploys (GitHub Actions OIDC, `infra/deploy.sh`).
+- AWS: region `eu-north-1`; scripts take credentials from `AWS_PROFILE` when set, else the default chain. Never hard-code a profile or other account-identifying name in the repo (it is public). Merging to `main` deploys (GitHub Actions OIDC, `infra/deploy.sh`).
 - `main` has a review-required ruleset: open a PR; the owner merges or approves `--admin`.
 - Spec first: anything beyond a one-line fix gets an entry in `features.md`, then TDD from that spec.
 - Feedback is marked `handled` in DynamoDB, never deleted — see the `handling-feedback` skill.
