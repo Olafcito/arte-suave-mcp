@@ -10,15 +10,7 @@ MCP server for the [Arte Suave](https://artesuave.dk) gym portal in Copenhagen.
 
 I built it so I can manage my muay thai classes from my AI provider and sync
 them with my calendar, as part of a personal AI assistant that runs my
-training schedule. Not affiliated with the gym.
-
-```mermaid
-flowchart TB
-    U(["🧑 You"]) -- "book me in on Tuesday" --> A["🤖 Claude / ChatGPT"]
-    A -- "MCP" --> L["λ arte-suave-mcp"]
-    A -- "class times" --> C["📅 Your calendar"]
-    L -- "schedule, book, cancel" --> P["🏋️ Arte Suave portal"]
-```
+training schedule.  
 
 ## 🧱 Tech stack
 
@@ -86,26 +78,6 @@ those days cannot be booked yet.
 | `debug_fetch(target)` | Sanitized raw HTML for when the site changes. |
 
 ## 🛠️ Contributing
-
-### 🗺️ Architecture
-
-```mermaid
-flowchart TB
-    S["server.py<br/>tools + auth guard"] --> V["service.py<br/>tool logic, response shaping"]
-    V --> P["parsers.py<br/>HTML → models"]
-    V --> C["client.py + waf.py<br/>login, session, proof of work"]
-    P --> K["config.py<br/>URLs, selectors, aliases"]
-    C --> K
-    S --> O["oauth.py + creds.py<br/>who is calling"]
-    V --> D[("DynamoDB<br/>sessions, oauth, feedback")]
-    V --> B[("S3<br/>training pics")]
-    O --> M[("SSM + KMS<br/>credentials")]
-```
-
-- [`DISCOVERY.md`](DISCOVERY.md) explains how the portal works and why the
-  code does what it does.
-- `features.md` is the backlog. Anything bigger than a one line fix gets a spec
-  there first.
 
 ### Set up and test
 
